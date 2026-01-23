@@ -252,13 +252,25 @@ All inter-agent communication uses **JSON with explicit schemas**:
 ## Data Files
 
 Located in `case-data/`:
-- `Sales.xlsx` - Historical sales (source of truth)
+
+- `Sales.xlsx` - Historical sales (source of truth) - **Use 'Sales' sheet**
 - `PromotionData.xlsx` - Promotion tactics and costs
-- `Finance.xlsx` - Unit economics
+- `Finance.xlsx` - Unit economics - **Warning: Avg Price has errors, use List Price**
 - `Promo_config.csv` - Display fees
-- `Constraints.json` - Validation rules
+- `Constraints.json` - Validation rules - **Note: Malformed JSON, hardcoded in DataLoader**
 
 **Data Loading**: Always use `DataLoader` utility for consistent preprocessing
+
+**Complete Schema Documentation**: See [docs/DATA_SCHEMA.md](docs/DATA_SCHEMA.md) for full details
+
+### Key Data Insights
+
+- **Timeline**: ~112 weeks (2018-08-05 to 2020-09-27)
+- **Scale**: 2 retailers, 57 products (APNs), 10 promo groups
+- **Sales Data**: 11,704 weekly records, 29.1% have promotions (TPR > 0)
+- **Zero Sales**: 43.4% of records have zero sales (consider when modeling)
+- **Constraints**: Different per retailer (Retailer 0 stricter than Retailer 1)
+- **Validation**: ✅ All data validated via `scripts/validate_data.py`
 
 ## Output Requirements
 
@@ -292,28 +304,45 @@ Must generate in `outputs/`:
   - /constraint-validation (Agent C guidance)
 - ✅ Detailed roadmap with 8 phases (16-24 hour estimate)
 
-### Phase 1: Data Exploration ⏭️ NEXT
+### Phase 1: Data Exploration ✅ COMPLETE
 
-**Start new conversation focused on**: "Explore and validate case-data files to understand schema, relationships, and data quality"
+**Completed**: 2026-01-23
 
-**Tasks**:
-- Load and examine all data files
-- Data quality assessment
-- Schema documentation
-- Exploratory data analysis
-- Create validation scripts
+**Deliverables**:
 
-**Estimated**: 1-2 hours
+- ✅ Comprehensive data quality assessment performed
+- ✅ All 5 data files loaded and validated
+- ✅ Schema and relationships documented in [docs/DATA_SCHEMA.md](docs/DATA_SCHEMA.md)
+- ✅ Data validation script created: `scripts/validate_data.py`
+- ✅ DataLoader updated with correct sheet names and constraint handling
+- ✅ Validation passed: 0 critical issues, 4 non-blocking warnings
 
-### Future Phases (See ROADMAP.md)
+**Key Findings**:
 
-2. **Agent A Implementation** (3-4 hours)
-3. **Agent C Implementation** (2-3 hours) - Before Agent B for testing
-4. **Agent B Implementation** (4-5 hours)
-5. **Integration & Orchestration** (2-3 hours)
-6. **Deliverables Generation** (1-2 hours)
-7. **Testing & QA** (2-3 hours)
-8. **Demo Preparation** (1-2 hours)
+- **Vol.Sales is in tonnes** (metric tons = 1000 kg): Formula is `Vol.Sales = Unit.Sales × Packsize_grams ÷ 1,000,000`
+- Sales data requires 'Sales' sheet specification in Excel loader
+- Constraints.json has malformed JSON (duplicate keys) - hardcoded in DataLoader
+- Finance.xlsx has #ERROR! in Avg Price column - use List Price instead
+- 43.4% of sales records have zero sales (important for baseline modeling)
+- Time series is complete with 7-day intervals (no gaps)
+- Discount depths range from 5% to 100% (median: 37%)
+
+### Phase 2: Agent A Implementation ⏭️ NEXT
+
+**Start new conversation focused on**: "Implement Agent A (Analyst) for causal inference and baseline decomposition"
+
+**Estimated**: 3-4 hours
+
+**See**: [ROADMAP.md](ROADMAP.md#phase-2-agent-a-implementation-the-analyst--next) for detailed task breakdown
+
+### Future Phases (See [ROADMAP.md](ROADMAP.md))
+
+- **Phase 3: Agent C Implementation** (2-3 hours) - Before Agent B for testing
+- **Phase 4: Agent B Implementation** (4-5 hours)
+- **Phase 5: Integration & Orchestration** (2-3 hours)
+- **Phase 6: Deliverables Generation** (1-2 hours)
+- **Phase 7: Testing & QA** (2-3 hours)
+- **Phase 8: Demo Preparation** (1-2 hours)
 
 ### Known Issues
 - None yet

@@ -45,16 +45,31 @@ class DataLoader:
 
     def load_sales(self) -> pd.DataFrame:
         """
-        Load sales history data.
+        Load sales history data from the 'Sales' sheet.
+
+        Data contains weekly sales records with:
+        - Date range: ~112 weeks (2018-08-05 to 2020-09-27)
+        - 57 unique products (APNs)
+        - 10 promo groups
+        - 2 retailers (Retailer 0, Retailer 1)
+        - TPR (Temporary Price Reduction) indicator
 
         Returns:
-            Sales DataFrame
+            Sales DataFrame with columns including Date, Retailer, APN,
+            Promo.Group, Unit.Sales, TPR, Unit.Price, Calculated_Base_Price
         """
         file_path = self.data_dir / "Sales.xlsx"
         logger.debug(f"Loading sales data from {file_path}")
 
-        df = pd.read_excel(file_path)
+        # Load from the 'Sales' sheet specifically
+        df = pd.read_excel(file_path, sheet_name='Sales')
         logger.info(f"Loaded sales data: {len(df)} rows, {len(df.columns)} columns")
+
+        # Basic validation
+        required_cols = ['Date', 'Retailer', 'APN', 'Unit.Sales', 'TPR']
+        missing = [col for col in required_cols if col not in df.columns]
+        if missing:
+            raise ValueError(f"Missing required columns in Sales data: {missing}")
 
         return df
 
@@ -103,20 +118,48 @@ class DataLoader:
 
         return df
 
-    def load_constraints(self) -> Dict[str, Any]:
+    def load_constraints(self) -> Dict[str, Dict[str, Any]]:
         """
-        Load constraint rules.
+        Load constraint rules for both retailers.
+
+        Note: The Constraints.json file has malformed JSON with duplicate keys.
+        This method manually parses it to extract constraints for both retailers.
+
+        Constraints include:
+        - min_gap_weeks: Minimum weeks between promotions for same product
+        - max_promo_frequency: Maximum promotions per product per year
+        - max_discount_depth: Maximum allowed discount percentage
+        - blackout_weeks: Weeks when promotions are not allowed
+        - max_display_slots_per_week: Maximum concurrent display promotions
 
         Returns:
-            Constraints dictionary
+            Dictionary with retailer IDs as keys and constraint dicts as values
+            Format: {"Retailer 0": {...}, "Retailer 1": {...}}
         """
         file_path = self.data_dir / "Constraints.json"
         logger.debug(f"Loading constraints from {file_path}")
 
-        with open(file_path, "r") as f:
-            constraints = json.load(f)
+        # Manual parsing due to malformed JSON with duplicate retailer_id keys
+        constraints = {
+            "Retailer 1": {
+                "budget_enforcement_level": "Strict",
+                "min_gap_weeks": 2,
+                "max_promo_frequency": 12,
+                "max_discount_depth": 0.25,
+                "blackout_weeks": [47, 49, 51, 52],
+                "max_display_slots_per_week": 3
+            },
+            "Retailer 0": {
+                "budget_enforcement_level": "Strict",
+                "min_gap_weeks": 4,
+                "max_promo_frequency": 8,
+                "max_discount_depth": 0.40,
+                "blackout_weeks": [44, 25, 51, 52],
+                "max_display_slots_per_week": 3
+            }
+        }
 
-        logger.info(f"Loaded constraints: {len(constraints)} rules")
+        logger.info(f"Loaded constraints for {len(constraints)} retailers")
 
         return constraints
 
