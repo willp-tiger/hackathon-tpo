@@ -110,17 +110,33 @@ Invoke with: `/promotion-optimizer`
 
 **Note**: Skills are a Claude Code feature. If building standalone agents with the SDK, embed this knowledge directly in system prompts instead.
 
-## Hooks vs. SDK Tools
-
-**Important**: Hooks are specific to Claude Code and **NOT available** in standalone Claude Python SDK agents.
-
-- **Hooks** = Claude Code automation (pre/post tool execution, session events)
-- **SDK Tools** = Custom functions your agents can call during execution
+## SDK Tools
+**SDK Tools** = Custom functions your agents can call during execution
 
 For this project, use **SDK tools** to implement:
 - Data validation after loading
 - Constraint checking after calendar generation
 - Logging and monitoring during agent execution
+
+## Hooks and Skills Configuration
+
+This project includes **automated hooks** and **specialized skills** to support development. See [.claude/HOOKS_AND_SKILLS.md](.claude/HOOKS_AND_SKILLS.md) for complete documentation.
+
+### Configured Hooks
+
+1. **format-on-save**: Auto-format Python files with black
+2. **validate-agent-separation**: Enforce separation of concerns (critical for judging)
+3. **test-on-commit**: Run tests before commits (blocking)
+4. **log-execution**: Log all optimization runs
+5. **validate-deliverables**: Check output format compliance
+
+### Available Skills
+
+1. **/causal-inference**: Statistical methods for Agent A (baseline, elasticity, seasonality)
+2. **/promotion-optimization**: Optimization strategies for Agent B (volume/profit, constraints)
+3. **/constraint-validation**: Validation techniques for Agent C (budget, gaps, frequency)
+
+**Usage**: Invoke skills with `/skill-name` when implementing corresponding agents.
 
 ## Session Management: Single-Purpose Conversations
 
