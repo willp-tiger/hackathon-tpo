@@ -449,64 +449,105 @@ pytest tests/ --cov=src --cov-report=html
 
 ---
 
-## Session Summary (2026-01-23)
+## Session Summary (2026-01-23 - Session 2)
 
 ### What Was Completed ✅
 
-1. **Architecture Audit Complete**
-   - Identified critical issue: All 3 agents were hardcoded Python classes instead of LLM-powered
-   - This would score 0/40 on "Architecture & Agentic Design" judging criteria
+1. **LLM-Powered Agent A Implementation - COMPLETE**
+   - Created [src/agents/analyst.py](src/agents/analyst.py) (~650 lines) using Anthropic Python SDK
+   - 10 tool definitions for data analysis (load, calculate baseline, validate, elasticity, display, seasonality)
+   - Multi-turn conversation loop (16 iterations in test run)
+   - System prompt guiding methodical data science approach
 
-2. **Documentation Fixed**
-   - CLAUDE.md: Complete rewrite with ⚠️ CRITICAL section, LLM-first examples
-   - README.md: Updated all agent descriptions to show LLM implementation
-   - ROADMAP.md: Phase 2 rewritten as "REBUILD REQUIRED" with new tasks
-   - ARCHITECTURE_FIX_SUMMARY.md: Created comprehensive summary
+2. **Real Data Calculations - 100% VERIFIED**
+   - ✅ Elasticity calculated from actual TPR column (discount buckets: 0-15%, 15-25%, 25-35%, 35-45%, 45%+)
+   - ✅ Display lift calculated by merging PromotionData.xlsx display columns with sales data (2.04x)
+   - ✅ Seasonality factors calculated from historical weekly sales patterns (52 weeks)
+   - ✅ Baseline using regression/SKU averages/global average from actual sales data
+   - ❌ **NO dummy/industry standard values** - all calculations from real data
 
-3. **Code Cleanup**
-   - ❌ Deleted: `src/agents/analyst.py` (757 lines hardcoded logic)
-   - ❌ Deleted: `src/agents/strategist.py` (placeholder methods)
-   - ❌ Deleted: `src/agents/auditor.py` (hardcoded validation)
-   - ❌ Deleted: `test_agent_a.py`, `debug_agent_a.py`
-   - ✅ Kept: `src/utils/` folder (will be called as tools by LLM agents)
+3. **Agent Autonomy Demonstrated**
+   - Tried 3 baseline approaches (regression, SKU averages, global average)
+   - Validated each with 12-week holdout (MAPE: 185-220%)
+   - Autonomously decided to retry with 6-week holdout
+   - Re-validated all 3 approaches with new parameters
+   - Made reasoned decision to use regression approach despite high MAPE
+   - Documented 6 attempts in approach_log with clear reasoning
 
-4. **Git Commit**
-   - Committed all changes with detailed message
-   - Branch: `dev-claude`
-   - Status: Clean, ready for Agent A implementation
+4. **Outputs Generated**
+   - [outputs/causal_parameters.json](outputs/causal_parameters.json) (3,148 bytes)
+     - Baseline velocity: 3,014.94 units
+     - Price elasticity: 12.27
+     - Discount lift factors (5 buckets from real data)
+     - Display lift: 2.04x
+     - 52-week seasonality factors
+     - approach_log with 6 documented attempts
+     - model_quality_warning (transparency about MAPE issues)
+   - [outputs/agent_a_execution_log.txt](outputs/agent_a_execution_log.txt) (141 lines)
+     - Shows Claude's reasoning at each iteration
+     - Visible tool calls and decisions
+     - Perfect for judging criteria: "Visible agent interactions in logs"
+
+5. **Testing**
+   - Created [test_agent_a_llm.py](test_agent_a_llm.py)
+   - Verified end-to-end execution (~13 minutes)
+   - All tools working correctly
+   - JSON output validated
+
+### Known Issues ⚠️
+
+1. **High MAPE Values (185-265%)**
+   - All baseline approaches show very high error rates
+   - Indicates data quality issues or missing factors
+   - Agent correctly identifies and documents this limitation
+   - **REQUIRES RESEARCH**: Need to investigate alternative baseline calculation methods
+
+2. **Approach Concerns**
+   - Current baseline methods may be too simplistic for this data
+   - Elasticity calculation is basic (% change in qty / % change in price)
+   - Lift calculation doesn't account for confounding factors
+   - **NEXT SESSION FOCUS**: Research and implement more sophisticated approaches
 
 ### What's Next ⏭️
 
-**Next Session Goal**: "Implement Agent A as LLM-powered agent with Claude API"
+**Next Session Goal**: "Research and implement improved baseline & lift calculation methods"
 
-**Tasks for Next Session**:
-1. Create new `src/agents/analyst.py` with:
-   - `Anthropic()` client initialization
-   - 8-9 tool definitions (load_data, calculate_baseline_*, validate_*, save_*)
-   - System prompt for data scientist behavior
-   - `.analyze()` method with multi-turn conversation loop
-   - Tool execution functions (call `src/utils/metrics.py` functions)
+**Priority Tasks**:
+1. **Research Alternative Baseline Approaches**:
+   - Time series decomposition (STL, seasonal decomposition)
+   - More sophisticated regression (ARIMAX, SARIMAX)
+   - Causal inference methods (difference-in-differences, synthetic control)
+   - Mixed effects models (account for SKU-level and time effects)
+   - Quantile regression for robustness
 
-2. Test with real API call:
-   - Verify Claude tries multiple approaches
-   - Verify reasoning appears in logs
-   - Verify MAPE validation works
-   - Verify final JSON saved
+2. **Research Better Lift Calculation Methods**:
+   - Matched control groups (propensity score matching)
+   - Regression discontinuity design
+   - Bayesian hierarchical models
+   - Elasticity estimation with instrumental variables
+   - Account for cannibalization and halo effects
 
-3. Expected deliverable:
-   - Working LLM-powered Agent A (~250-300 lines)
-   - `outputs/causal_parameters.json` generated by Claude
-   - Execution log showing Claude's decision-making
+3. **Add More Sophisticated Tools to Agent A**:
+   - Additional baseline calculation methods
+   - Improved validation metrics (beyond MAPE)
+   - Cross-validation approaches
+   - Statistical significance testing
 
-**Prerequisites**:
-- Set `ANTHROPIC_API_KEY` environment variable
-- Have `anthropic` package installed (`pip install anthropic`)
+4. **Expected Deliverables**:
+   - Research document or comments in code explaining approaches
+   - Updated tool implementations with better methods
+   - Lower MAPE (target: <50% as intermediate goal, <15% as final)
+   - More robust causal parameter estimates
 
-**Estimated Effort**: 4-5 hours
+**Research Resources**:
+- Promotional lift modeling literature
+- Causal inference textbooks (Pearl, Imbens & Rubin)
+- Time series forecasting methods (Hyndman)
+- Retail analytics case studies
 
 ---
 
-**Last Updated**: 2026-01-23 (End of Session)
+**Last Updated**: 2026-01-23 (End of Session 2)
 **Current Branch**: `dev-claude`
-**Session Completed**: Architecture fixes and documentation updates
-**Next Session**: Implement LLM-based Agent A
+**Session Completed**: Agent A LLM implementation with real data calculations
+**Next Session**: Research and implement improved baseline/lift methods
