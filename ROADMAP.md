@@ -59,71 +59,94 @@ This document provides a detailed task breakdown for implementing the Trade Prom
 
 ---
 
-## Phase 2: Agent A Implementation (The Analyst) ⏭️ NEXT
+## Phase 2: Agent A Implementation (The Analyst) 🔄 REBUILD REQUIRED
 
-**Objective**: Implement causal inference engine for baseline and elasticity calculation.
+**Objective**: Implement LLM-powered causal inference agent using Claude API.
 
-**Conversation Focus**: "Implement Agent A (Analyst) with baseline decomposition and elasticity modeling"
+**Conversation Focus**: "Rebuild Agent A as LLM-powered agent with Claude API and tool use"
 
-**Skill to Use**: `/causal-inference`
+**Skill to Use**: `/causal-inference` (for statistical guidance, not implementation)
 
-**Prerequisites**: Phase 1 complete - data validated and documented
+**Prerequisites**:
+- Phase 1 complete - data validated and documented
+- ANTHROPIC_API_KEY environment variable set
+- Previous incorrect implementation deleted
 
 ### Tasks
 
-1. **Baseline Decomposition**
-   - [ ] Implement time series decomposition method
-   - [ ] Extract trend component
-   - [ ] Extract seasonal component (weekly patterns)
-   - [ ] Calculate baseline velocity (average non-promoted sales)
-   - [ ] Validate baseline accuracy on holdout data
+1. **Delete Incorrect Implementation**
+   - [ ] Delete `src/agents/analyst.py` (757 lines of hardcoded logic)
+   - [ ] Delete `test_agent_a.py` (tests wrong implementation)
+   - [ ] Delete `debug_agent_a.py` (debug script for wrong implementation)
+   - [ ] Delete `outputs/causal_parameters.json` (from wrong implementation)
 
-2. **Price Elasticity Calculation**
-   - [ ] Implement regression-based elasticity model
-   - [ ] Calculate base price elasticity coefficient
-   - [ ] Calculate discount lift factors for 15%, 20%, 30% depths
-   - [ ] Validate elasticity estimates
+2. **Create LLM Agent Structure**
+   - [ ] Create new `AnalystAgent` class with `self.client = Anthropic()`
+   - [ ] Define system prompt for data scientist behavior
+   - [ ] Define tools array with 5-7 analysis tools
+   - [ ] Implement `.analyze()` method with multi-turn conversation loop
 
-3. **Display Mechanics Impact**
-   - [ ] Measure incremental lift from displays
-   - [ ] Calculate display lift multiplier
-   - [ ] Validate display impact across SKUs
+3. **Implement Analysis Tools**
+   - [ ] `load_sales_preview()` - Load and return data sample for Claude to inspect
+   - [ ] `calculate_baseline_regression()` - Regression-based baseline with MAPE
+   - [ ] `calculate_baseline_sku_averages()` - SKU-specific averages with MAPE
+   - [ ] `calculate_baseline_global()` - Global average fallback
+   - [ ] `calculate_elasticity()` - Price elasticity via log-log regression
+   - [ ] `calculate_display_lift()` - Display mechanics multiplier
+   - [ ] `calculate_seasonality()` - Week-of-year factors
+   - [ ] `save_causal_parameters()` - Save final JSON output
 
-4. **Seasonality Patterns**
-   - [ ] Extract week-of-year seasonality factors
-   - [ ] Calculate seasonal indices (52 weeks)
-   - [ ] Validate seasonality patterns
+4. **Multi-Turn Conversation Loop**
+   - [ ] Initialize messages with task description
+   - [ ] Loop: Call Claude API with tools
+   - [ ] Process tool_use responses: execute Python functions
+   - [ ] Append tool results to messages as tool_result
+   - [ ] Continue until Claude returns end_turn
+   - [ ] Extract final causal parameters
 
-5. **Validation & Testing**
-   - [ ] Split data into train/test (holdout last 12 weeks)
-   - [ ] Calculate MAPE on holdout period
-   - [ ] Target: MAPE < 15% for baseline forecast
-   - [ ] Create validation report
+5. **Testing with Real API Calls**
+   - [ ] Test with small dataset (verify API connectivity)
+   - [ ] Verify Claude tries multiple approaches for baseline
+   - [ ] Verify reasoning appears in message history
+   - [ ] Verify MAPE validation triggers fallback approaches
+   - [ ] Verify final JSON output format
 
-6. **Output Generation**
-   - [ ] Generate `causal_parameters.json` with correct structure
-   - [ ] Include all required fields (baseline, elasticity, display, seasonality)
-   - [ ] Add validation metrics to output
+6. **Logging & Visibility**
+   - [ ] Log all Claude messages to execution log
+   - [ ] Include Claude's reasoning (text blocks)
+   - [ ] Include tool calls and results
+   - [ ] Make rejection/acceptance decisions visible
 
 **Deliverables**:
-- Fully implemented `src/agents/analyst.py`
-- Unit tests for all methods
-- `causal_parameters.json` output
-- Validation report showing MAPE < 15%
+- New LLM-powered `src/agents/analyst.py` (200-300 lines)
+- Working multi-turn conversation with tool use
+- `causal_parameters.json` generated via Claude reasoning
+- Execution log showing Claude's decision-making process
 
-**Estimated Effort**: 3-4 hours
+**Estimated Effort**: 4-5 hours (rebuild from scratch)
 
 ---
 
 ## Phase 3: Agent C Implementation (The Auditor)
 
-**Objective**: Implement strict compliance validator (do before Agent B for testing).
+**Objective**: Implement LLM-powered compliance validator using Claude API (do before Agent B for testing).
 
-**Conversation Focus**: "Implement Agent C (Auditor) with constraint validation"
+**Conversation Focus**: "Implement Agent C as LLM-powered auditor with validation tools"
 
-**Skill to Use**: `/constraint-validation`
+**Skill to Use**: `/constraint-validation` (for constraint guidance, not implementation)
 
 ### Tasks
+
+1. **Delete Incorrect Implementation**
+   - [ ] Delete existing `src/agents/auditor.py` (hardcoded validation logic)
+
+2. **Create LLM Agent Structure**
+   - [ ] Create new `AuditorAgent` class with `self.client = Anthropic()`
+   - [ ] Define system prompt for strict auditor behavior
+   - [ ] Define validation tools (6-8 tools)
+   - [ ] Implement `.audit()` method with multi-turn conversation
+
+3. **Implement Validation Tools**
 
 1. **Budget Validation**
    - [ ] Implement TPR cost calculation (variable spend)

@@ -2,224 +2,279 @@
 
 ## Project Overview
 
-This is a **multi-agent system** for Trade Promotion Optimization (TPO) built for the AI Agents Hackathon. The system uses **spec-driven development** with three autonomous agents that collaborate through an iterative feedback loop to generate optimized 52-week promotion calendars.
+This is a **multi-agent LLM system** for Trade Promotion Optimization (TPO) built for the AI Agents Hackathon. The system uses **Claude API** to power three autonomous agents that collaborate through an iterative feedback loop to generate optimized 52-week promotion calendars.
 
-## Development Philosophy: Spec-Driven Development
+## ⚠️ CRITICAL ARCHITECTURE REQUIREMENT
 
-This project follows **specification-driven development principles**:
+**ALL THREE AGENTS MUST BE LLM-POWERED USING CLAUDE API.**
 
-1. **Start with Clear Specifications**: All agent behaviors, interfaces, and outputs are defined in the case study documentation before implementation
-2. **Design by Contract**: Each agent has well-defined inputs, outputs, and responsibilities documented in docstrings
-3. **Testable Requirements**: Every deliverable (calendar, reports, logs) has explicit format and validation requirements
-4. **Iterative Refinement**: Agents iterate until specifications are met (the rejection loop is a feature, not a bug)
+This is not optional. The judging criteria allocates 40% of the score to "Architecture & Agentic Design", which explicitly evaluates:
+- **Agent autonomy and decision-making** (LLM reasoning, not hardcoded logic)
+- **Visible agent interactions in logs** (shows Claude's reasoning process)
+- **Appropriate use of agentic patterns** (tool use, multi-turn conversations)
 
-### Why This Matters
+**Hardcoded Python classes with pandas/sklearn logic = 0/40 points.**
 
-The judging criteria explicitly looks for:
-- **Separation of Concerns**: Each agent must stay within its specification
-- **Modularity**: Swapping objectives (Volume ↔ Profit) should work without architectural changes
-- **Explainability**: Every decision must map back to a spec-defined reason
+## Agent Architecture: LLM-Powered Reasoning
 
-## Agent Architecture & Behaviors
+### Agent A: The Analyst (LLM-Powered Data Scientist)
 
-### Agent A: The Data Scientist
-
-**Critical Philosophy**: Agent A must behave like a **professional data scientist**, not just a calculator.
-
-**Core Principles**:
-1. **Exploration First**: Conduct thorough EDA before modeling
-2. **Multiple Approaches**: Try multiple methods (regression, decomposition, ML) for each metric
-3. **Quality Gates**: NEVER deliver results below acceptable thresholds (e.g., MAPE > 15%)
-4. **Recursive Fallback**: If approach 1 fails quality checks, try approach 2, then 3, etc.
-5. **Explainability**: Document which approach was used and why
-6. **Transparency**: Report validation metrics for all approaches, not just the final one
-
-**Approach Hierarchy for Baseline Forecasting**:
-1. **Regression-based decomposition** (TPR, Display, Seasonality as features)
-2. **Time series decomposition** (STL or seasonal_decompose)
-3. **SKU-specific averages with smoothing**
-4. **Ensemble methods** (if individual approaches fail)
-
-**Never Accept**:
-- MAPE > 15% without trying alternative methods
-- Default/placeholder values in production output
-- Single-approach solutions without validation
-
-**Agent A Responsibilities**:
-- Decompose sales into Baseline and Incremental volume
-- Calculate Price Elasticity Coefficients
-- Quantify Display mechanics impact
-- Extract Seasonality patterns
-- **Self-validate** all outputs before delivery
-
-### Recommended Approach: Claude Agent SDK
-
-**Use the [Claude Python SDK (Agent SDK)](https://platform.claude.com/docs/en/agent-sdk/python) to build the three agents.**
-
-The Agent SDK provides:
-- **Tool use patterns** for agents to interact with data and each other
-- **Message history management** for maintaining conversation state
-- **Structured output parsing** for reliable agent-to-agent communication
-- **Error handling** for robust agent execution
-
-### Agent Implementation Pattern
+**Implementation**: Uses Anthropic Python SDK with tool use for data analysis.
 
 ```python
 from anthropic import Anthropic
 
-client = Anthropic(api_key="...")
+client = Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
 
-# Agent with tool use
-messages = [
-    {"role": "user", "content": "Analyze sales data and generate causal parameters"}
+class AnalystAgent:
+    def analyze(self, sales_data, promo_data):
+        """Agent A uses Claude to reason about data and call analysis tools."""
+
+        tools = [
+            {
+                "name": "load_sales_preview",
+                "description": "Load sales data and return first 10 rows for inspection",
+                "input_schema": {"type": "object", "properties": {}}
+            },
+            {
+                "name": "calculate_baseline_regression",
+                "description": "Calculate baseline using regression approach",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "features": {"type": "array", "items": {"type": "string"}},
+                        "validation_weeks": {"type": "number"}
+                    }
+                }
+            },
+            {
+                "name": "calculate_baseline_sku_averages",
+                "description": "Calculate baseline using SKU-specific averages",
+                "input_schema": {"type": "object", "properties": {}}
+            },
+            {
+                "name": "validate_forecast_mape",
+                "description": "Validate baseline forecast and return MAPE",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "baseline_values": {"type": "object"},
+                        "holdout_weeks": {"type": "number"}
+                    }
+                }
+            },
+            {
+                "name": "save_causal_parameters",
+                "description": "Save final causal parameters to JSON",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {"parameters": {"type": "object"}}
+                }
+            }
+        ]
+
+        system_prompt = """You are Agent A, a professional data scientist analyzing trade promotion data.
+
+Your task: Generate causal parameters for promotion optimization.
+
+Approach:
+1. Conduct EDA first - load data preview, understand distributions
+2. Try multiple approaches for baseline forecasting:
+   - Regression-based (most sophisticated)
+   - SKU-specific averages (more robust)
+   - Global average (fallback)
+3. Validate each approach with MAPE on holdout data
+4. NEVER accept MAPE > 15% without trying all approaches
+5. Calculate elasticity, display lift, seasonality
+6. Save final parameters with approach_log documenting what you tried
+
+Use tools iteratively. Be methodical. Explain your reasoning at each step."""
+
+        messages = [
+            {
+                "role": "user",
+                "content": f"Analyze sales data and generate causal parameters. Sales data has {len(sales_data)} records."
+            }
+        ]
+
+        # Multi-turn conversation with tool use
+        while True:
+            response = client.messages.create(
+                model="claude-3-5-sonnet-20241022",
+                max_tokens=4096,
+                system=system_prompt,
+                tools=tools,
+                messages=messages
+            )
+
+            # Process tool calls
+            if response.stop_reason == "tool_use":
+                # Execute tools, add results to messages
+                # Continue conversation
+                pass
+            elif response.stop_reason == "end_turn":
+                # Extract final parameters
+                break
+
+        return causal_parameters
+```
+
+**Key Behaviors (Guided by System Prompt)**:
+1. **Exploration First**: Claude conducts EDA before modeling
+2. **Multiple Approaches**: Claude tries different methods, validates each
+3. **Quality Gates**: Claude checks MAPE < 15%, tries alternatives if needed
+4. **Explainability**: Claude documents reasoning in natural language
+5. **Tool Use**: Claude calls Python functions for actual computation
+
+**Why LLM vs. Hardcoded**:
+- ✅ **Reasoning visible in logs** (critical for judging)
+- ✅ **Adaptive to data quality** (handles edge cases intelligently)
+- ✅ **Natural language explanations** (better than code comments)
+- ✅ **True agent autonomy** (makes decisions, not just executes)
+
+### Agent B: The Strategist (LLM-Powered Optimizer)
+
+**Implementation**: Uses Claude API with tools for calendar generation and adjustment.
+
+**System Prompt Philosophy**:
+```
+You are Agent B, the strategist. Your goal is to generate a 52-week promotion calendar.
+
+Objective: {volume or profit}
+Budget: ${budget}
+
+You have causal parameters from Agent A. Use them to:
+1. Select high-leverage SKUs (high elasticity for volume, high margin for profit)
+2. Choose optimal discount depths using lift factors
+3. Schedule in high-seasonality weeks
+4. Add displays where ROI is positive
+5. Stay within budget
+
+If Auditor rejects your plan:
+- Read violations carefully
+- Make MATERIAL adjustments (not cosmetic)
+- Explain what you changed and why
+
+Generate calendar as JSON with reasoning for each promotion.
+```
+
+**Tools**:
+- `calculate_promotion_lift()` - Estimate lift for SKU + discount + display
+- `calculate_promotion_cost()` - Calculate TPR + display costs
+- `save_draft_calendar()` - Save calendar proposal as JSON
+
+**Rejection Loop**: Auditor feedback added to message history, Claude adjusts calendar.
+
+### Agent C: The Auditor (LLM-Powered Validator)
+
+**Implementation**: Uses Claude API with tools for constraint validation.
+
+**System Prompt Philosophy**:
+```
+You are Agent C, the compliance auditor. You are STRICT and DETERMINISTIC.
+
+Validate the calendar against these constraints:
+1. Budget: Total spend <= ${budget}
+2. Gap rules: Min {X} weeks between promos for same SKU
+3. Frequency: Max {Y} promos per SKU per year
+4. Blackout weeks: No promos in weeks {list}
+5. Financial: No negative margins
+
+If ANY violation exists: Status = REJECTED
+If zero violations: Status = APPROVED
+
+Provide detailed feedback for each violation to help Strategist fix issues.
+```
+
+**Tools**:
+- `calculate_total_spend()` - Sum TPR + display costs across calendar
+- `check_gap_violations()` - Check spacing between promotions per SKU
+- `check_frequency_violations()` - Count promos per SKU
+- `save_audit_report()` - Save audit results as JSON
+
+## Critical Agent SDK Patterns
+
+### 1. Tool Definition
+
+Each agent has 4-6 tools that execute Python logic. Claude decides WHEN and HOW to call them.
+
+```python
+tools = [
+    {
+        "name": "tool_name",
+        "description": "What this tool does (Claude reads this)",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "param1": {"type": "string", "description": "What param1 means"}
+            },
+            "required": ["param1"]
+        }
+    }
 ]
-
-response = client.messages.create(
-    model="claude-3-5-sonnet-20241022",
-    max_tokens=4096,
-    tools=[...],  # Define tools for data analysis
-    messages=messages
-)
-
-# Process tool calls, maintain conversation history
-# Implement the feedback loop between agents
 ```
 
-### Critical Agent SDK Patterns for This Project
+### 2. Multi-Turn Conversations (Rejection Loop)
 
-1. **Tool Definition**: Define tools for each agent's capabilities
-   - Analyst: Data loading, statistical analysis, baseline calculation
-   - Strategist: Calendar generation, optimization, adjustment
-   - Auditor: Constraint checking, budget validation, violation reporting
+```python
+# Agent B initial proposal
+messages = [{"role": "user", "content": "Generate promotion calendar"}]
+response_b = client.messages.create(..., messages=messages)
 
-2. **Multi-Turn Conversations**: Use message history to implement the rejection loop
-   ```python
-   # Initial proposal
-   messages.append({"role": "user", "content": strategist_prompt})
-   response = client.messages.create(...)
+# Agent C audits
+messages.append({"role": "assistant", "content": response_b.content})
+messages.append({"role": "user", "content": f"Audit this calendar: {calendar_json}"})
+response_c = client.messages.create(..., messages=messages)
 
-   # Auditor feedback
-   messages.append({"role": "assistant", "content": response.content})
-   messages.append({"role": "user", "content": auditor_feedback})
-
-   # Iteration continues until approved
-   ```
-
-3. **Structured Outputs**: Use JSON schema tools to ensure reliable data exchange between agents
-
-## Skills for Agent Support
-
-**Skills** can extend agent capabilities with domain-specific knowledge:
-
-### Recommended Skills for This Project
-
-1. **Data Analysis Skills**: Statistical methods, time series decomposition, elasticity calculation
-2. **Optimization Skills**: Constraint satisfaction, budget optimization, calendar scheduling
-3. **Financial Modeling Skills**: ROI calculation, margin analysis, spend allocation
-
-### Creating Custom Skills
-
-Skills are stored in `skills/` directory with `SKILL.md` files:
-
-```markdown
----
-name: promotion-optimizer
-description: Optimization strategies for promotion calendar generation
----
-
-# Promotion Optimization Skill
-
-## Constraint Satisfaction Strategies
-[Detailed optimization approaches...]
-
-## Budget Allocation Patterns
-[Best practices for staying within budget...]
+# If rejected, Agent B adjusts
+if audit_status == "REJECTED":
+    messages.append({"role": "assistant", "content": response_c.content})
+    messages.append({"role": "user", "content": f"Calendar rejected. Violations: {violations}. Regenerate."})
+    response_b = client.messages.create(..., messages=messages)
+    # Loop continues...
 ```
 
-Invoke with: `/promotion-optimizer`
+### 3. Structured Outputs
 
-**Note**: Skills are a Claude Code feature. If building standalone agents with the SDK, embed this knowledge directly in system prompts instead.
+Use tool schemas to enforce JSON structure:
 
-## SDK Tools
-**SDK Tools** = Custom functions your agents can call during execution
-
-For this project, use **SDK tools** to implement:
-- Data validation after loading
-- Constraint checking after calendar generation
-- Logging and monitoring during agent execution
-
-## Hooks and Skills Configuration
-
-This project includes **automated hooks** and **specialized skills** to support development. See [.claude/HOOKS_AND_SKILLS.md](.claude/HOOKS_AND_SKILLS.md) for complete documentation.
-
-### Configured Hooks
-
-1. **format-on-save**: Auto-format Python files with black
-2. **validate-agent-separation**: Enforce separation of concerns (critical for judging)
-3. **test-on-commit**: Run tests before commits (blocking)
-4. **log-execution**: Log all optimization runs
-5. **validate-deliverables**: Check output format compliance
-
-### Available Skills
-
-1. **/causal-inference**: Statistical methods for Agent A (baseline, elasticity, seasonality)
-2. **/promotion-optimization**: Optimization strategies for Agent B (volume/profit, constraints)
-3. **/constraint-validation**: Validation techniques for Agent C (budget, gaps, frequency)
-
-**Usage**: Invoke skills with `/skill-name` when implementing corresponding agents.
-
-## Session Management: Single-Purpose Conversations
-
-### When to End Current Conversation
-
-End the conversation and start fresh when:
-
-1. **Major Context Switch**: Moving from implementation to testing, or from agent development to data exploration
-2. **Token Budget Concerns**: The conversation is becoming long and unfocused
-3. **Completion of Milestone**: An agent is fully implemented and tested
-4. **Need for Fresh Perspective**: Debugging is circular or Claude is stuck on an approach
-
-### Single-Purpose Conversation Patterns
-
-**Good conversation boundaries:**
-- ✅ "Implement Agent A (Analyst) with baseline decomposition"
-- ✅ "Create and test the rejection loop between Strategist and Auditor"
-- ✅ "Generate final deliverables and validate format"
-- ✅ "Explore the sales data structure and create data validation"
-
-**Bad conversation mixing:**
-- ❌ "Build all three agents, test them, generate reports, and fix any bugs"
-- ❌ "Implement Agent A and also refactor the data loader and update docs"
-
-### Context Transfer Between Conversations
-
-**Primary Method: This CLAUDE.md File**
-
-This file is **automatically loaded** at the start of every Claude Code session in this directory. Use it to maintain:
-- Architecture decisions
-- Coding conventions
-- Agent specifications
-- Known issues and solutions
-- Progress tracking
-
-**Secondary Methods:**
-
-1. **Code Documentation**: Keep agent docstrings and comments up to date
-2. **Conversation Summaries**: At the end of a session, ask Claude to update this file with:
-   - What was completed
-   - What needs work next
-   - Any important decisions or learnings
-3. **Git Commits**: Detailed commit messages capture intent and context
-4. **README Updates**: Keep the main README.md synchronized with implementation progress
-
-**Example End-of-Session Workflow:**
-
+```python
+{
+    "name": "save_calendar",
+    "description": "Save calendar in required format",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "calendar_events": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "week": {"type": "number"},
+                        "sku": {"type": "string"},
+                        "discount_depth": {"type": "number"},
+                        "display_active": {"type": "boolean"},
+                        "reasoning": {"type": "string"}
+                    },
+                    "required": ["week", "sku", "discount_depth", "display_active", "reasoning"]
+                }
+            }
+        }
+    }
+}
 ```
-You: "Update the Progress Tracking section below with what we completed"
-Claude: [Updates CLAUDE.md with session summary]
-You: [Commit changes with descriptive message]
-[Next session picks up from updated CLAUDE.md]
-```
+
+## Data Files
+
+Located in `case-data/`:
+
+- `Sales.xlsx` - Historical sales (source of truth) - **Use 'Sales' sheet**
+- `PromotionData.xlsx` - Promotion tactics and costs
+- `Finance.xlsx` - Unit economics - **Warning: Avg Price has errors, use List Price**
+- `Promo_config.csv` - Display fees
+- `Constraints.json` - Validation rules - **Note: Malformed JSON, hardcoded in DataLoader**
+
+**Complete Schema Documentation**: See [docs/DATA_SCHEMA.md](docs/DATA_SCHEMA.md) for full details
 
 ## Project Standards
 
@@ -232,75 +287,58 @@ You: [Commit changes with descriptive message]
 
 ### Agent Communication Format
 
-All inter-agent communication uses **JSON with explicit schemas**:
+All inter-agent communication uses **JSON**:
 
 ```python
-# Example: Strategist output
+# Agent A output (saved by tool call)
 {
-  "objective": str,
-  "total_projected_spend": float,
-  "budget_limit": float,
-  "iteration": int,
+  "baseline_velocity_avg": 3014.94,
+  "elasticity_model": {
+    "base_price_elasticity": 1.29,
+    "discount_lift_factors": {
+      "depth_15_pct": 1.5,
+      "depth_20_pct": 2.0,
+      "depth_30_pct": 3.0
+    },
+    "display_lift_multiplier": 1.3
+  },
+  "seasonality_factors": {1: 0.87, 2: 0.95, ...},
+  "approach_log": [
+    {"approach": "regression", "mape": 0.31, "status": "ACCEPTED"}
+  ]
+}
+
+# Agent B output
+{
+  "objective": "Maximize Unit Volume",
+  "total_projected_spend": 950000,
+  "budget_limit": 1000000,
+  "iteration": 1,
   "calendar_events": [
     {
-      "week": int,
-      "sku": str,
-      "discount_depth": float,
-      "display_active": bool,
-      "reasoning": str,
-      "projected_outcome": str
+      "week": 12,
+      "sku": "APN_123",
+      "discount_depth": 0.30,
+      "display_active": true,
+      "reasoning": "High elasticity SKU during peak seasonality week",
+      "projected_outcome": "3.8x baseline lift"
     }
   ]
 }
+
+# Agent C output
+{
+  "status": "REJECTED",
+  "violations": [
+    {
+      "type": "Gap Rule Violation",
+      "details": "Week 12 and 14 for APN_123 violate 4-week gap",
+      "severity": "high"
+    }
+  ],
+  "feedback": "Increase spacing between promotions to meet minimum gap requirements."
+}
 ```
-
-### Testing Requirements
-
-- **Unit Tests**: Each agent method tested independently
-- **Integration Tests**: Full workflow tested end-to-end
-- **Validation Tests**: Output format validation for all deliverables
-- **Accuracy Tests**: Baseline MAPE < 15% on holdout data
-
-## Critical Success Criteria
-
-### From Judging Rubric
-
-1. **Architecture & Agentic Design (40%)**
-   - The rejection loop MUST be visible in logs
-   - Agents MUST NOT cross responsibility boundaries
-   - System MUST work when objective changes (Volume ↔ Profit)
-
-2. **Technical Implementation (40%)**
-   - Budget calculations MUST be exact
-   - Constraints MUST have ZERO violations in final output
-   - Baseline forecast MUST show low MAPE
-
-3. **User Experience & Reporting (20%)**
-   - All outputs MUST clearly explain "why"
-   - Before/After comparison MUST be easy to understand
-
-## Data Files
-
-Located in `case-data/`:
-
-- `Sales.xlsx` - Historical sales (source of truth) - **Use 'Sales' sheet**
-- `PromotionData.xlsx` - Promotion tactics and costs
-- `Finance.xlsx` - Unit economics - **Warning: Avg Price has errors, use List Price**
-- `Promo_config.csv` - Display fees
-- `Constraints.json` - Validation rules - **Note: Malformed JSON, hardcoded in DataLoader**
-
-**Data Loading**: Always use `DataLoader` utility for consistent preprocessing
-
-**Complete Schema Documentation**: See [docs/DATA_SCHEMA.md](docs/DATA_SCHEMA.md) for full details
-
-### Key Data Insights
-
-- **Timeline**: ~112 weeks (2018-08-05 to 2020-09-27)
-- **Scale**: 2 retailers, 57 products (APNs), 10 promo groups
-- **Sales Data**: 11,704 weekly records, 29.1% have promotions (TPR > 0)
-- **Zero Sales**: 43.4% of records have zero sales (consider when modeling)
-- **Constraints**: Different per retailer (Retailer 0 stricter than Retailer 1)
-- **Validation**: ✅ All data validated via `scripts/validate_data.py`
 
 ## Output Requirements
 
@@ -314,109 +352,67 @@ Must generate in `outputs/`:
 
 ### Phase 0: Project Setup ✅ COMPLETE
 
-- ✅ Project structure and skeleton code
-- ✅ Three agent classes (placeholder implementations)
-- ✅ Orchestrator with rejection loop logic
-- ✅ Data loader utilities
-- ✅ Metrics and validation utilities
-- ✅ CLI entry point
-- ✅ Git repository initialized on `dev-claude` branch
-- ✅ Comprehensive CLAUDE.md development guide
-- ✅ 5 automated hooks configured:
-  - format-on-save (auto-format Python)
-  - validate-agent-separation (enforce boundaries)
-  - test-on-commit (quality gate)
-  - log-execution (audit trail)
-  - validate-deliverables (format checking)
-- ✅ 3 specialized skills created:
-  - /causal-inference (Agent A guidance)
-  - /promotion-optimization (Agent B guidance)
-  - /constraint-validation (Agent C guidance)
-- ✅ Detailed roadmap with 8 phases (16-24 hour estimate)
+- ✅ Initial skeleton code created
+- ✅ Git repository initialized
+- ❌ **INCORRECT**: Implemented agents as Python classes instead of LLM agents
+- ⚠️ **REQUIRES REBUILD**: All three agents need to be rewritten
 
 ### Phase 1: Data Exploration ✅ COMPLETE
 
-**Completed**: 2026-01-23
-
-**Deliverables**:
-
 - ✅ Comprehensive data quality assessment performed
-- ✅ All 5 data files loaded and validated
-- ✅ Schema and relationships documented in [docs/DATA_SCHEMA.md](docs/DATA_SCHEMA.md)
-- ✅ Data validation script created: `scripts/validate_data.py`
-- ✅ DataLoader updated with correct sheet names and constraint handling
-- ✅ Validation passed: 0 critical issues, 4 non-blocking warnings
+- ✅ Schema documented in [docs/DATA_SCHEMA.md](docs/DATA_SCHEMA.md)
+- ✅ Validation script created: `scripts/validate_data.py`
 
-**Key Findings**:
+### Phase 2: Agent A Implementation 🔄 IN PROGRESS (REBUILD REQUIRED)
 
-- **Vol.Sales is in tonnes** (metric tons = 1000 kg): Formula is `Vol.Sales = Unit.Sales × Packsize_grams ÷ 1,000,000`
-- Sales data requires 'Sales' sheet specification in Excel loader
-- Constraints.json has malformed JSON (duplicate keys) - hardcoded in DataLoader
-- Finance.xlsx has #ERROR! in Avg Price column - use List Price instead
-- 43.4% of sales records have zero sales (important for baseline modeling)
-- Time series is complete with 7-day intervals (no gaps)
-- Discount depths range from 5% to 100% (median: 37%)
+**Status**: Previous implementation was hardcoded Python logic. **MUST REBUILD AS LLM AGENT.**
 
-### Phase 2: Agent A Implementation ✅ COMPLETE (Redesigned)
-
-**Completed**: 2026-01-23 (Redesigned with data scientist methodology)
-
-**Architecture**: Agent A now behaves like a **professional data scientist**
-
-**Deliverables**:
-
-- ✅ **EDA Module**: Comprehensive exploratory data analysis before modeling
-- ✅ **Multi-Approach Baseline Forecasting**:
-  - Approach 1: Regression-based (SKU + seasonality features)
-  - Approach 2: SKU-specific averages with seasonality
-  - Approach 3: Global average (fallback)
-- ✅ **Quality Gates**: MAPE < 15% threshold with recursive fallback
-- ✅ **Approach Validation**: Each approach validated on holdout data before selection
-- ✅ **Transparent Logging**: Full `approach_log` documenting which methods were tried
-- ✅ **Best-Approach Selection**: Automatically selects best performing approach
-- ✅ **Baseline velocity**: 3014.94 units/week (regression approach, MAPE 31.41%)
-- ✅ **Price elasticity**: 1.29 via log-log regression
-- ✅ **Discount lift factors**: 15%→1.5x, 20%→2.0x, 30%→3.0x
-- ✅ **Display lift**: 1.3x (empirical default, robust to missing data)
-- ✅ **Seasonality factors**: 52 weeks (range: 0.56 to 1.52)
-- ✅ **Output**: `outputs/causal_parameters.json` with EDA summary and approach log
-
-**Key Features**:
-
-1. **Never Delivers Unreliable Results**: Won't return placeholders; tries all approaches first
-2. **Self-Validating**: Validates every approach on holdout data before accepting
-3. **Transparent**: Documents which approach was used and why in output JSON
-4. **Data Quality Aware**: Conducts EDA, reports zero sales (43.4%), promotion rates (29.1%)
-5. **Recursive Fallback**: If approach 1 fails, tries 2, then 3, then uses best available with warning
-
-**Quality Results**:
-
-- All 3 approaches tried and validated
-- Regression approach selected (best MAPE: 31.41%)
-- Warning issued that 15% threshold not met (due to 43% zero sales in data)
-- System correctly prioritizes quality validation over blind execution
-
-**Next**: Agent C Implementation (Auditor) - needed before Agent B for testing rejection loop
+**New Approach**:
+1. Delete `src/agents/analyst.py` (757 lines of wrong approach)
+2. Create new `AnalystAgent` class with:
+   - `self.client = Anthropic()`
+   - System prompt defining data scientist behavior
+   - Tools for: load_data, calculate_baseline, run_regression, validate_mape, save_parameters
+   - `.analyze()` method that runs multi-turn Claude conversation
+3. Test with actual API calls to verify:
+   - Claude tries multiple approaches
+   - Reasoning appears in logs
+   - Tools get called correctly
+   - MAPE validation works
 
 ### Future Phases (See [ROADMAP.md](ROADMAP.md))
 
-- **Phase 3: Agent C Implementation** (2-3 hours) - Before Agent B for testing
-- **Phase 4: Agent B Implementation** (4-5 hours)
-- **Phase 5: Integration & Orchestration** (2-3 hours)
-- **Phase 6: Deliverables Generation** (1-2 hours)
-- **Phase 7: Testing & QA** (2-3 hours)
-- **Phase 8: Demo Preparation** (1-2 hours)
+- **Phase 3: Agent C Implementation** (LLM-based, before Agent B)
+- **Phase 4: Agent B Implementation** (LLM-based with rejection loop)
+- **Phase 5: Integration & Orchestration**
+- **Phase 6: Deliverables Generation**
+- **Phase 7: Testing & QA**
+- **Phase 8: Demo Preparation**
 
 ### Known Issues
-- None yet
+
+**CRITICAL: Incorrect Architecture Implemented**
+
+All three agents were implemented as deterministic Python classes instead of LLM-powered agents. This violates the core requirement and will score 0/40 on "Architecture & Agentic Design".
+
+**Files to Delete**:
+- `src/agents/analyst.py` (757 lines of hardcoded logic)
+- `test_agent_a.py` (tests wrong implementation)
+- `debug_agent_a.py` (tests wrong implementation)
+- `outputs/causal_parameters.json` (from wrong implementation)
+
+**Rebuild Required**: All agents must be rewritten to use Claude API with tool use.
 
 ### Architecture Decisions
-- Using Claude Python SDK for agent implementation (not LangChain)
-- Rejection loop capped at 10 iterations (configurable)
-- Logging both to console and file for transparency
-- JSON schema validation for all inter-agent messages
-- Single-purpose conversations (one phase per session)
-- Context transfer via CLAUDE.md updates
+
+- ✅ Using Anthropic Python SDK for all agents
+- ✅ Tool use pattern for agent-data interaction
+- ✅ Multi-turn conversations for rejection loop
+- ✅ Rejection loop capped at 10 iterations (configurable)
+- ✅ Logging both to console and file for transparency
+- ✅ JSON schema validation for all inter-agent messages
+- ✅ Single-purpose conversations (one phase per session)
+- ✅ Context transfer via CLAUDE.md updates
 
 ## Development Commands
 
@@ -426,11 +422,16 @@ python -m venv venv
 venv\Scripts\activate
 pip install -r requirements.txt
 
+# Set API key
+set ANTHROPIC_API_KEY=your_key_here  # Windows
+# OR
+export ANTHROPIC_API_KEY=your_key_here  # Unix
+
 # Run optimization
 python main.py --objective volume --budget 1000000
 python main.py --objective profit --budget 1500000
 
-# With debug logging
+# With debug logging (to see Claude's reasoning)
 python main.py --objective volume --budget 1000000 --log-level DEBUG
 
 # Testing
@@ -442,11 +443,13 @@ pytest tests/ --cov=src --cov-report=html
 
 - **The rejection loop is the key differentiator**: A valid first-try calendar scores LOW
 - **Explainability > Optimization**: Better to show clear reasoning than marginal gains
-- **Separation of concerns matters**: Agent A should NEVER propose strategies; Agent C should NEVER suggest creative solutions
+- **Separation of concerns matters**: Agent A analyzes, Agent B strategizes, Agent C validates (no crossover)
 - **Every decision needs a "why"**: Reasoning strings are not optional
+- **LLM reasoning must be visible**: agent_execution_log.txt should show Claude's thought process
 
 ---
 
 **Last Updated**: 2026-01-23
 **Current Branch**: `dev-claude`
-**Active Session Goal**: Initial project setup and architecture
+**Active Session Goal**: Rebuild agents with correct LLM-based architecture
+**Critical Action**: Delete incorrect implementations and rebuild with Claude API

@@ -25,41 +25,57 @@ Trade promotions represent one of the largest discretionary investments for CPG 
 
 ### Three-Agent System
 
-#### Agent A: The Analyst (Causal Inference Engine)
-**Purpose**: The "Scientist" - measures history to create the "Physics" of the model (Lift & Baseline)
+#### Agent A: The Analyst (LLM-Powered Causal Inference Engine)
+**Purpose**: The "Data Scientist" - uses Claude API to analyze historical data and generate causal parameters
+
+**Implementation**: Uses Anthropic Python SDK with tool use for data analysis
+- Claude reasons about which approaches to try (regression, averages, decomposition)
+- Tools execute pandas/sklearn computations
+- Claude validates MAPE < 15%, tries alternatives if needed
+- Reasoning visible in agent_execution_log.txt
 
 **Responsibilities**:
 - Decompose historical sales into Baseline (Seasonality/Trend) and Incremental (Lift) volume
 - Calculate Price Elasticity Coefficients for different discount depths (e.g., 15%, 20%, 30%)
 - Quantify the impact of Display mechanics (Lift Multipliers)
+- Self-validate outputs using quality thresholds
 
 **Inputs**:
 - `case-data/Sales.xlsx`
 - `case-data/PromotionData.xlsx`
 
-**Outputs**:
+**Outputs** (saved via tool call):
 ```json
 {
-  "baseline_velocity_avg": 150,
+  "baseline_velocity_avg": 3014.94,
   "elasticity_model": {
-    "base_price_elasticity": -2.1,
+    "base_price_elasticity": 1.29,
     "discount_lift_factors": {
-      "depth_15_pct": 1.8,
-      "depth_20_pct": 2.5,
-      "depth_30_pct": 3.8
+      "depth_15_pct": 1.5,
+      "depth_20_pct": 2.0,
+      "depth_30_pct": 3.0
     },
-    "display_lift_multiplier": 1.4
-  }
+    "display_lift_multiplier": 1.3
+  },
+  "approach_log": [
+    {"approach": "regression", "mape": 0.31, "status": "ACCEPTED"}
+  ]
 }
 ```
 
-#### Agent B: The Strategist (Optimizer)
+#### Agent B: The Strategist (LLM-Powered Optimizer)
 **Purpose**: The creative intelligence that constructs a future calendar meeting specific business objectives
+
+**Implementation**: Uses Claude API with tools for calendar generation
+- Claude selects SKUs, discount depths, weeks based on causal parameters
+- Tools calculate costs and projected outcomes
+- Claude responds to Auditor feedback by adjusting strategy
+- Reasoning visible in rejection loop logs
 
 **Responsibilities**:
 - Ingest "Physics" from Agent A
 - Generate promotion calendar optimized for Volume or Profit objective
-- Iterate based on feedback from Agent C
+- Iterate based on feedback from Agent C (Auditor)
 
 **Inputs**:
 - `causal_parameters.json` (from Agent A)
@@ -85,14 +101,20 @@ Trade promotions represent one of the largest discretionary investments for CPG 
 }
 ```
 
-#### Agent C: The Auditor (Compliance & Finance Guardrail)
-**Purpose**: The "Controller" - deterministic and strict validator
+#### Agent C: The Auditor (LLM-Powered Compliance Validator)
+**Purpose**: The "Controller" - strict validator with intelligent feedback
+
+**Implementation**: Uses Claude API with validation tools
+- Claude calls tools to check budget, gaps, frequency, blackout weeks
+- Tools return violation lists
+- Claude generates actionable feedback for Strategist
+- Reasoning visible in audit reports
 
 **Responsibilities**:
 - Calculate Aggregate Spend (Sum of all weeks)
 - Check if Aggregate Spend <= Total Budget
 - Check Gap Rules, Frequency, and Slotting constraints
-- Reject invalid plans with detailed feedback
+- Reject invalid plans with detailed, actionable feedback
 
 **Inputs**:
 - `draft_calendar_candidate.json` (from Agent B)
@@ -256,10 +278,48 @@ hackathon-tpo/
 
 ## Development Notes
 
+- **ALL AGENTS USE CLAUDE API** - This is mandatory for judging criteria (40% of score)
 - All agents must be modular and independently testable
 - The rejection loop between Agent B and Agent C is critical for demonstrating agentic behavior
-- Financial calculations must be precise and auditable
-- All decisions must be logged with clear reasoning
+- Financial calculations must be precise and auditable (tools handle computation, Claude handles reasoning)
+- All decisions must be logged with clear reasoning (Claude's natural language explanations)
+- Visible agent interactions in logs are required for demo and judging
+
+## Architecture Pattern
+
+Each agent follows this pattern:
+
+```python
+from anthropic import Anthropic
+
+class AgentX:
+    def __init__(self):
+        self.client = Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+        self.tools = [...]  # Define tools for this agent
+        self.system_prompt = "..."  # Define agent behavior
+
+    def execute(self, input_data):
+        """Run LLM-powered reasoning with tool use."""
+        messages = [{"role": "user", "content": "Task description"}]
+
+        while True:
+            response = self.client.messages.create(
+                model="claude-3-5-sonnet-20241022",
+                max_tokens=4096,
+                system=self.system_prompt,
+                tools=self.tools,
+                messages=messages
+            )
+
+            if response.stop_reason == "tool_use":
+                # Execute tools, append results, continue
+                pass
+            else:
+                # Extract final output
+                break
+
+        return result
+```
 
 ## License
 
