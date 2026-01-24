@@ -46,7 +46,6 @@ env/
 # Logs
 *.log
 logs/
-agent_execution_log.txt
 
 # Output files
 outputs/
@@ -54,6 +53,9 @@ outputs/
 *.json
 !case-data/*.json
 !case-data/*.csv
+# Allow key output files for sharing with team
+!outputs/causal_parameters.json
+!outputs/agent_a_execution_log.txt
 
 # Test coverage
 htmlcov/
