@@ -1,19 +1,40 @@
 # TPO Data Schema Documentation
 
 **Generated**: 2026-01-23
+**Updated**: 2026-01-23 (Session 4 - PPG Granularity Change)
 **Validation Status**: ✅ Passed with warnings
 
 This document describes the structure, relationships, and quality of all data files used in the TPO AI Agents system.
 
 ## Overview
 
-The system uses **5 data files** covering ~112 weeks (2018-08-05 to 2020-09-27) across **2 retailers** and **57 products**.
+The system uses **5+ data files** covering ~113 weeks (2018-08-05 to 2020-09-27) across **2 retailers** and **11 product groups (PPGs)**.
+
+### ⚠️ CRITICAL: PPG-Retailer-Week Granularity
+
+**UPDATED (Session 4)**: All forecasting, baseline calculations, and promotion calendars MUST use **PPG-level granularity**.
+
+- **Primary data source**: `sales_v2.xlsx` (NOT Sales.xlsx!)
+- Data structure: Each row = **PPG × Retailer × Week**
+- **PPG** (Product Group) = Brand + Promo.Group combination (e.g., "Brand 5_Promo.Group 6")
+- **DO NOT** use APN (individual SKU) level - that's the wrong granularity
+- **DO NOT** aggregate across retailers
+- Each PPG-Retailer combination has independent sales patterns
+- Baselines must be calculated at **PPG-Retailer-Week** level
+- Final promotion calendar must specify promotions per PPG + Retailer
+
+**Granularity:**
+- 11 unique PPGs
+- 2 unique Retailers
+- 113 unique Weeks
+- 3,676 total rows in sales_v2.xlsx
 
 ### Data Files Summary
 
 | File | Records | Key Fields | Purpose |
 |------|---------|------------|---------|
-| Sales.xlsx | 11,704 | Date, Retailer, APN, Unit.Sales, TPR | Historical weekly sales (source of truth) |
+| **sales_v2.xlsx** | **3,676** | **PPG, Retailer, Date, Unit.Sales, TPR** | **Primary sales data at PPG level** |
+| ~~Sales.xlsx~~ | ~~11,704~~ | ~~APN~~ | ~~DEPRECATED - Wrong granularity (APN level)~~ |
 | PromotionData.xlsx | 845 | Date, Promo.Group, Retailer, promo types | Historical promotion tactics |
 | Finance.xlsx | 108 | Retailer, PPG, List Price, Margin | Unit economics per product |
 | Promo_config.csv | 7 | Promo Type, fixed Spend | Display promotion costs |
@@ -21,9 +42,11 @@ The system uses **5 data files** covering ~112 weeks (2018-08-05 to 2020-09-27) 
 
 ---
 
-## 1. Sales.xlsx
+## 1. sales_v2.xlsx (Primary Sales Data)
 
-**Purpose**: Primary dataset for causal inference and baseline forecasting. Contains weekly sales records with promotion indicators.
+**Purpose**: Primary dataset for causal inference and baseline forecasting. Contains weekly sales records at PPG (Product Group) level with promotion indicators.
+
+**⚠️ CRITICAL**: This is the ONLY correct sales data file. Do NOT use Sales.xlsx (deprecated, wrong granularity).
 
 ### Schema
 
@@ -31,42 +54,71 @@ The system uses **5 data files** covering ~112 weeks (2018-08-05 to 2020-09-27) 
 |--------|------|-------------|-------|
 | Date | datetime | Week ending date | Weekly granularity, 7-day intervals |
 | Retailer | str | Retailer identifier | "Retailer 0" or "Retailer 1" |
-| APN | str | Product identifier | 57 unique products |
-| Promo.Group | str | Promotion group | 10 groups for aggregation |
-| Description | str | Product description | |
+| **PPG** | str | **Product Group identifier** | **11 unique product groups (Brand + Promo.Group)** |
+| Promo.Group | str | Promotion group component | Part of PPG calculation |
 | Category, Sub.Category | str | Product hierarchy | |
-| Segment, Sub.Segment | str | Market segment | ~5% missing in Sub.Segment |
-| Manufacturer, Brand, Sub.Brand | str | Brand hierarchy | |
-| Packsize, Product.Type | str | Product attributes | |
-| Unit.Sales | float | Units sold | 6 negative values (returns?), 5,083 zeros (43.4%) |
+| Segment, Sub.Segment | str | Market segment | Some missing in Sub.Segment |
+| Manufacturer, Brand, Sub.Brand | str | Brand hierarchy | Brand is part of PPG |
+| Product.Type | str | Product type attribute | |
+| Unit.Sales | float | Units sold | 592 zeros (16.1%), no negatives |
 | Val.Sales | float | Sales value ($) | |
 | Vol.Sales | float | Volume in **tonnes** (metric tons) | Formula: Unit.Sales × Packsize_grams ÷ 1,000,000 |
 | Wtd.Selling.Dist | float | Weighted distribution | |
-| Unit.Price | float | Actual unit price | |
-| Calculated_Base_Price | float | Base price (no discount) | Used for discount calculation |
-| TPR | float | Temporary Price Reduction % | 0-100, >0 indicates promotion (29.1% of records) |
+| Unit Price | float | Actual unit price | Note: no dot in column name |
+| Price/kg | float | Price per kilogram | |
+| ~~Calculated_Base_Price~~ | float | ~~Base price (no discount)~~ | **⚠️ UNRELIABLE - DO NOT USE** |
+| **TPR** | float | **Temporary Price Reduction %** | **Merged from PromotionData.xlsx (promo_tpr × 100)** |
+| **display_platinum** | int | Platinum display flag | Merged from PromotionData.xlsx |
+| **display_gold** | int | Gold display flag | Merged from PromotionData.xlsx |
+| **display_silver** | int | Silver display flag | Merged from PromotionData.xlsx |
+| **display_bronze** | int | Bronze display flag | Merged from PromotionData.xlsx |
+| **promo_feature** | int | Feature/ad flag | Merged from PromotionData.xlsx |
+
+**Note**: Sheet name is 'Sales ' (with trailing space).
+
+**⚠️ CRITICAL DATA QUALITY ISSUE**:
+- `Calculated_Base_Price` column in sales_v2.xlsx is **unreliable and should not be used**
+- TPR and promotion features are merged from PromotionData.xlsx during data loading
 
 ### Key Statistics
 
-- **Date Range**: 2018-08-05 to 2020-09-27 (~112 weeks)
-- **Total Records**: 11,704
+- **Date Range**: 2018-08-05 to 2020-09-27 (113 weeks)
+- **Total Records**: 3,676
 - **Retailers**: 2
-- **Products (APNs)**: 57
-- **Promo Groups**: 10
-- **Promo Rate**: 29.1% of records have TPR > 0
+- **Product Groups (PPGs)**: 11
+- **PPG-Retailer Combinations**: 22 (11 × 2)
+- **Promo Rate**: 26.0% of records have TPR > 0 (957 promotional periods)
 - **Time Series**: Complete weekly data, 7-day intervals, no gaps
+
+**Sample PPGs**:
+- "Brand 5_Promo.Group 6"
+- "Brand 4_Promo.Group 3"
+- "Brand 1_Promo.Group 20"
+- "Brand 5_Promo.Group 5"
+- "Brand 5_Promo.Group 0"
 
 ### Data Quality Notes
 
-**Warnings:**
-- 6 records with negative sales (likely returns or adjustments)
-- 5,083 records (43.4%) with zero sales (products not available or no purchases)
+**Good News:**
+- No negative sales records (clean dataset)
+- Only 592 records (16.1%) with zero sales (much lower than APN-level data)
 
 **Discount Depth Analysis (TPR > 0):**
-- Min discount: 5.04%
-- Max discount: 100.00%
-- Median discount: 37.17%
-- 567 records (16.6%) have discount > 50%
+- Based on correct List Price from Finance.xlsx (not Calculated_Base_Price)
+- Records with promotions: 957 (26.0% of data)
+- TPR calculation is now accurate using Finance.xlsx List Price
+
+### Comparison to Deprecated Sales.xlsx
+
+| Metric | ❌ Sales.xlsx (Old) | ✅ sales_v2.xlsx (New) |
+|--------|---------------------|------------------------|
+| Granularity | APN (individual SKU) | PPG (Product Group) |
+| Products | 57 APNs | 11 PPGs |
+| Rows | 11,704 | 3,676 |
+| Weeks | ~112 | 113 |
+| Has PPG column | No (calculated) | Yes |
+| Zero sales rate | 43.4% | 16.1% |
+| Status | **DEPRECATED** | **ACTIVE** |
 
 ---
 
@@ -112,7 +164,7 @@ The system uses **5 data files** covering ~112 weeks (2018-08-05 to 2020-09-27) 
 | Column | Type | Description | Notes |
 |--------|------|-------------|-------|
 | Retailer | str | Retailer identifier | 1 null record |
-| PPG | str | Product-Promo Group identifier | 57 unique (matches products in Sales) |
+| PPG | str | Product-Promo Group identifier | Format: "Brand X_Promo.Group Y" |
 | Retailer Margin | float | Retailer margin % | |
 | Key | str | Unique key | |
 | Avg Price | str | Average selling price | 107 records have "#ERROR!" |
@@ -120,8 +172,8 @@ The system uses **5 data files** covering ~112 weeks (2018-08-05 to 2020-09-27) 
 
 ### Key Statistics
 
-- **Total Records**: 108 (57 PPGs × ~2 retailers)
-- **Unique PPGs**: 57 (matches APN count in Sales)
+- **Total Records**: 108
+- **Unique PPGs**: Multiple (includes more granular breakdowns than sales_v2.xlsx)
 - **Unique Retailers**: 2
 
 ### Data Quality Notes
@@ -210,22 +262,22 @@ The system uses **5 data files** covering ~112 weeks (2018-08-05 to 2020-09-27) 
 ### Linkage Keys
 
 ```
-Sales.xlsx
+sales_v2.xlsx
   ├─ Retailer ──┬──> PromotionData.xlsx (Retailer)
   │             └──> Finance.xlsx (Retailer)
   │
   ├─ Promo.Group ──> PromotionData.xlsx (Promo.Group)
   │
-  └─ [APN + Brand + Promo.Group] ──> Finance.xlsx (PPG)
-       Format: "Brand X_Promo.Group Y_APN Z"
+  └─ PPG ──> Finance.xlsx (PPG)
+       Format: "Brand X_Promo.Group Y"
 ```
 
 ### Key Join Logic
 
 1. **Sales ↔ Finance**:
-   - Sales has `APN`, `Brand`, `Promo.Group`
-   - Finance has `PPG` (combined format)
-   - Join: Construct PPG from Sales columns or parse PPG to extract components
+   - Sales has `PPG` column (e.g., "Brand 5_Promo.Group 6")
+   - Finance has `PPG` column (same format)
+   - Join: Direct match on `PPG` and `Retailer`
 
 2. **Sales ↔ Promotions**:
    - Join on: `Retailer`, `Promo.Group`, `Date`
@@ -247,11 +299,12 @@ Sales.xlsx
 
 ### For Agent A (Analyst)
 
-1. **Load Sales data** from 'Sales' sheet
-2. **Handle zero/negative sales**: Consider filtering or treating as missing for baseline
-3. **Create base price reference**: Use `Calculated_Base_Price` for elasticity
-4. **Split train/test**: Reserve last 12 weeks for validation (MAPE calculation)
-5. **Group by Promo.Group**: May improve statistical power for causal inference
+1. **Load Sales data** using `data_loader.load_sales()` which loads sales_v2.xlsx and merges List Price from Finance.xlsx
+2. **Work at PPG-Retailer-Week level**: Each baseline is PPG + Retailer + Week specific
+3. **Handle zero sales**: 592 records (16.1%) with zero sales - treat as missing for baseline
+4. **Use List Price for calculations**: List Price from Finance.xlsx is the correct base price (not Calculated_Base_Price)
+5. **Split train/test**: Reserve last 12 weeks for validation (MAPE calculation)
+6. **Promotion rate**: 26.0% of data has TPR > 0 (correct rate using List Price)
 
 ### For Agent B (Strategist)
 

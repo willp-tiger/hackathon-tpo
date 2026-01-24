@@ -55,21 +55,55 @@ class DataLoader:
         - TPR (Temporary Price Reduction) indicator
 
         Returns:
-            Sales DataFrame with columns including Date, Retailer, APN,
-            Promo.Group, Unit.Sales, TPR, Unit.Price, Calculated_Base_Price
+            Sales DataFrame with columns including Date, Retailer, PPG,
+            Promo.Group, Unit.Sales, TPR, Unit.Price, List Price
+
+        Note:
+            - Uses sales_v2.xlsx at PPG (Product Group) level, NOT Sales.xlsx (APN level)
+            - Merges List Price from Finance.xlsx 'List Price' sheet for baseline calculations
+            - TPR and promotion tactics merged from PromotionData.xlsx (promo_tpr, displays, features)
+            - Calculated_Base_Price in sales_v2.xlsx is unreliable - DO NOT USE
         """
-        file_path = self.data_dir / "Sales.xlsx"
+        file_path = self.data_dir / "sales_v2.xlsx"
         logger.debug(f"Loading sales data from {file_path}")
 
-        # Load from the 'Sales' sheet specifically
-        df = pd.read_excel(file_path, sheet_name='Sales')
+        # Load from the 'Sales ' sheet (note: has trailing space)
+        df = pd.read_excel(file_path, sheet_name='Sales ')
         logger.info(f"Loaded sales data: {len(df)} rows, {len(df.columns)} columns")
 
         # Basic validation
-        required_cols = ['Date', 'Retailer', 'APN', 'Unit.Sales', 'TPR']
+        required_cols = ['Date', 'Retailer', 'PPG', ' Unit.Sales']
         missing = [col for col in required_cols if col not in df.columns]
         if missing:
             raise ValueError(f"Missing required columns in Sales data: {missing}")
+
+        # Rename columns with leading spaces for consistency
+        df = df.rename(columns={' Unit.Sales': 'Unit.Sales'})
+
+        # Load PromotionData.xlsx to get real TPR and promotion tactics
+        promo_path = self.data_dir / "PromotionData.xlsx"
+        promo_df = pd.read_excel(promo_path)
+        logger.debug(f"Loading promotion data from {promo_path}")
+
+        # Merge promotion data on Date, PPG, Promo.Group, Retailer
+        # This gives us: promo_tpr, promo_feature, display_platinum/gold/silver/bronze
+        df = df.merge(
+            promo_df[['Date', 'PPG', 'Promo.Group', 'Retailer', 'promo_tpr', 'promo_feature',
+                      'display_platinum', 'display_gold', 'display_silver', 'display_bronze']],
+            on=['Date', 'PPG', 'Promo.Group', 'Retailer'],
+            how='left'
+        )
+
+        # Convert promo_tpr to percentage (0-100) and use as TPR
+        # For non-promotional records (no match in PromotionData), TPR = 0
+        df['TPR'] = (df['promo_tpr'] * 100).fillna(0)
+
+        # Fill promotion feature flags with 0 for non-promotional records
+        for col in ['promo_feature', 'display_platinum', 'display_gold', 'display_silver', 'display_bronze']:
+            df[col] = df[col].fillna(0).astype(int)
+
+        logger.info(f"Merged promotion data: {df['TPR'].gt(0).sum()} promotional records, "
+                    f"{df['TPR'].eq(0).sum()} non-promotional records")
 
         return df
 

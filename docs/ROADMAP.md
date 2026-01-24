@@ -11,29 +11,30 @@ This document provides a detailed task breakdown for implementing the Trade Prom
 ### Tasks
 
 1. **Load and Examine All Data Files**
-   - [x] Load `Sales.xlsx` - understand schema, date ranges, SKUs (use 'Sales' sheet)
+   - [x] Load `sales_v2.xlsx` - understand schema, date ranges, PPGs (use 'Sales ' sheet with trailing space)
    - [x] Load `PromotionData.xlsx` - understand promotion types, costs, mechanics
    - [x] Load `Finance.xlsx` - understand unit economics, margins, pricing
    - [x] Load `Promo_config.csv` - understand display fees and configuration
    - [x] Load `Constraints.json` - understand validation rules
 
 2. **Data Quality Assessment**
-   - [x] Check for missing values (4.9% in Sub.Segment, 99% errors in Finance Avg Price)
-   - [x] Validate date ranges and continuity (complete 7-day intervals, 112 weeks)
-   - [x] Verify SKU consistency across files (57 products across all files)
-   - [x] Identify outliers or anomalies (6 negative sales, 43.4% zero sales)
+   - [x] Check for missing values (some in Sub.Segment, 99% errors in Finance Avg Price)
+   - [x] Validate date ranges and continuity (complete 7-day intervals, 113 weeks)
+   - [x] Verify PPG consistency across files (11 product groups)
+   - [x] Identify outliers or anomalies (0 negative sales, 16.1% zero sales)
    - [x] Document data quirks or issues (documented in DATA_SCHEMA.md)
 
 3. **Schema Documentation**
    - [x] Document column names and types for each file
    - [x] Identify primary keys and foreign keys
-   - [x] Map relationships between files (SKU links, date links)
+   - [x] Map relationships between files (PPG links, date links)
    - [x] Create data dictionary (docs/DATA_SCHEMA.md)
+   - [x] **Updated (Session 4)**: Migrated to PPG-level granularity
 
 4. **Exploratory Data Analysis**
-   - [x] Calculate summary statistics (11,704 records, 29.1% promo rate)
+   - [x] Calculate summary statistics (3,676 records, 84.5% promo rate)
    - [x] Analyze promotion frequency and patterns (845 promo events)
-   - [x] Examine price points and discount levels (5-100%, median 37%)
+   - [x] Examine price points and discount levels (48-100%, median 76%)
    - [x] Identify data patterns (Vol.Sales in tonnes, zero sales patterns)
 
 5. **Data Validation Scripts**
@@ -43,10 +44,11 @@ This document provides a detailed task breakdown for implementing the Trade Prom
    - [x] Document expected data formats
 
 **Deliverables**:
-- ✅ Data schema documentation: `docs/DATA_SCHEMA.md`
-- ✅ Updated `data_loader.py` with validation (Sales sheet, Constraints hardcoded)
+- ✅ Data schema documentation: `docs/DATA_SCHEMA.md` (updated Session 4 for PPG granularity)
+- ✅ Updated `data_loader.py` with validation (uses sales_v2.xlsx 'Sales ' sheet, Constraints hardcoded)
 - ✅ Validation script: `scripts/validate_data.py` (0 critical issues, 4 warnings)
 - ✅ Summary of findings in CLAUDE.md
+- ✅ **Session 4**: Migrated to PPG-Retailer-Week granularity (11 PPGs, not 57 APNs)
 
 **Key Findings**:
 - Vol.Sales is in tonnes (metric tons): `Unit.Sales × Packsize_grams ÷ 1,000,000`
@@ -59,71 +61,94 @@ This document provides a detailed task breakdown for implementing the Trade Prom
 
 ---
 
-## Phase 2: Agent A Implementation (The Analyst) 🔄 REBUILD REQUIRED
+## Phase 2: Agent A Implementation (The Analyst) 🔄 IN PROGRESS (Testing Pending)
 
-**Objective**: Implement LLM-powered causal inference agent using Claude API.
+**Objective**: Implement LLM-powered causal inference agent using Claude API with research-backed baseline forecasting.
 
-**Conversation Focus**: "Rebuild Agent A as LLM-powered agent with Claude API and tool use"
+**Status**: Implementation complete (Sessions 2-3), **TESTING REQUIRED** - improved methods not yet validated.
 
-**Skill to Use**: `/causal-inference` (for statistical guidance, not implementation)
+**Conversation Focus**: Research-driven iterative improvement
 
-**Prerequisites**:
-- Phase 1 complete - data validated and documented
-- ANTHROPIC_API_KEY environment variable set
-- Previous incorrect implementation deleted
+**Prerequisites Met**:
+- ✅ Phase 1 complete - data validated and documented
+- ✅ ANTHROPIC_API_KEY environment variable set
+- ✅ Research conducted on promotional forecasting best practices
 
-### Tasks
+**Blocking Items**:
+- ⚠️ **MUST RUN TEST**: `python tests/test_improved_baseline.py`
+- ⚠️ **MUST VALIDATE**: MAPE < 50% (minimum acceptable)
+- ⚠️ **MUST DOCUMENT**: Actual vs expected performance
 
-1. **Delete Incorrect Implementation**
-   - [ ] Delete `src/agents/analyst.py` (757 lines of hardcoded logic)
-   - [ ] Delete `test_agent_a.py` (tests wrong implementation)
-   - [ ] Delete `debug_agent_a.py` (debug script for wrong implementation)
-   - [ ] Delete `outputs/causal_parameters.json` (from wrong implementation)
+### Completed Tasks
 
-2. **Create LLM Agent Structure**
-   - [ ] Create new `AnalystAgent` class with `self.client = Anthropic()`
-   - [ ] Define system prompt for data scientist behavior
-   - [ ] Define tools array with 5-7 analysis tools
-   - [ ] Implement `.analyze()` method with multi-turn conversation loop
+1. **LLM Agent Structure**
+   - [x] Created `AnalystAgent` class with `self.client = Anthropic()`
+   - [x] Defined comprehensive system prompt for data scientist behavior
+   - [x] Defined 14 tools (10 original + 4 improved baseline methods)
+   - [x] Implemented `.analyze()` method with multi-turn conversation loop
 
-3. **Implement Analysis Tools**
-   - [ ] `load_sales_preview()` - Load and return data sample for Claude to inspect
-   - [ ] `calculate_baseline_regression()` - Regression-based baseline with MAPE
-   - [ ] `calculate_baseline_sku_averages()` - SKU-specific averages with MAPE
-   - [ ] `calculate_baseline_global()` - Global average fallback
-   - [ ] `calculate_elasticity()` - Price elasticity via log-log regression
-   - [ ] `calculate_display_lift()` - Display mechanics multiplier
-   - [ ] `calculate_seasonality()` - Week-of-year factors
-   - [ ] `save_causal_parameters()` - Save final JSON output
+2. **Original Analysis Tools**
+   - [x] `load_sales_preview()` - Load and return data sample
+   - [x] `load_promotion_preview()` - Load promotion data
+   - [x] `calculate_baseline_regression()` - Enhanced with SKU, Retailer, Promo.Group features
+   - [x] `calculate_baseline_sku_averages()` - SKU-specific averages
+   - [x] `calculate_baseline_global_avg()` - Global average fallback
+   - [x] `validate_baseline_forecast()` - **FIXED: Now uses granular SKU+Week predictions**
+   - [x] `calculate_elasticity_and_lift()` - From actual TPR data
+   - [x] `calculate_display_lift()` - From PromotionData.xlsx
+   - [x] `calculate_seasonality_factors()` - 52-week factors
+   - [x] `save_causal_parameters()` - Save final JSON
 
-4. **Multi-Turn Conversation Loop**
-   - [ ] Initialize messages with task description
-   - [ ] Loop: Call Claude API with tools
-   - [ ] Process tool_use responses: execute Python functions
-   - [ ] Append tool results to messages as tool_result
-   - [ ] Continue until Claude returns end_turn
-   - [ ] Extract final causal parameters
+3. **Improved Baseline Tools (Session 3)**
+   - [x] `calculate_baseline_sku_week_fixed_effects()` - Granular historical matching
+   - [x] `calculate_baseline_stl_decomposition()` - Time series decomposition
+   - [x] `calculate_baseline_quantile_regression()` - Robust to outliers
+   - [x] `calculate_baseline_mixed_effects()` - Hierarchical modeling (placeholder)
 
-5. **Testing with Real API Calls**
-   - [ ] Test with small dataset (verify API connectivity)
-   - [ ] Verify Claude tries multiple approaches for baseline
-   - [ ] Verify reasoning appears in message history
-   - [ ] Verify MAPE validation triggers fallback approaches
-   - [ ] Verify final JSON output format
+4. **Enhanced Validation**
+   - [x] Fixed critical bug: granular predictions instead of single average
+   - [x] Added multiple metrics: MAPE, MAE, RMSE, Bias%
+   - [x] Three-tier status: ACCEPTED (<15%), REJECTED (15-50%), FAILED (>50%)
 
-6. **Logging & Visibility**
-   - [ ] Log all Claude messages to execution log
-   - [ ] Include Claude's reasoning (text blocks)
-   - [ ] Include tool calls and results
-   - [ ] Make rejection/acceptance decisions visible
+5. **Research & Documentation**
+   - [x] Web research on promotional forecasting (8+ sources)
+   - [x] Created `docs/BASELINE_RESEARCH.md` - Research findings
+   - [x] Created `docs/IMPROVEMENTS_SUMMARY.md` - Implementation guide
+   - [x] Created `tests/test_improved_baseline.py` - Test script
 
-**Deliverables**:
-- New LLM-powered `src/agents/analyst.py` (200-300 lines)
-- Working multi-turn conversation with tool use
-- `causal_parameters.json` generated via Claude reasoning
-- Execution log showing Claude's decision-making process
+6. **Testing Status**
+   - [x] LLM agent executes successfully with original methods (~16 iterations, Session 2)
+   - [x] All tools working correctly
+   - [x] Reasoning visible in execution logs
+   - [ ] **CRITICAL: MAPE validation with improved methods NOT DONE**
+   - [ ] **MUST RUN**: `python tests/test_improved_baseline.py`
+   - [ ] **MUST ACHIEVE**: MAPE < 50% minimum
 
-**Estimated Effort**: 4-5 hours (rebuild from scratch)
+**Deliverables Completed**:
+- ✅ LLM-powered `src/agents/analyst.py` (~950 lines with improvements)
+- ✅ Working multi-turn conversation with tool use
+- ✅ 14 analysis tools (10 original + 4 improved)
+- ✅ Execution log showing Claude's decision-making (Session 2 only)
+- ✅ Research documentation with academic sources
+
+**Deliverables Pending**:
+- ⚠️ Test results with improved baseline methods
+- ⚠️ Actual MAPE measurements (not just expected)
+- ⚠️ Validation that improvements work as designed
+- ⚠️ Updated execution log with new methods
+
+**Actual Effort**:
+- Session 2: 4 hours (initial LLM implementation, MAPE 185-265% confirmed)
+- Session 3: 3 hours (research + improvements, **MAPE not yet tested**)
+- **Total**: 7 hours (implementation) + **testing time TBD**
+
+**Key Learnings**:
+- ❌ Initial implementation without research led to 185-265% MAPE (confirmed)
+- ✅ Web research identified industry benchmarks (10-15% for AI/ML)
+- ✅ Root cause: validation bug (single average for all predictions)
+- ✅ Solution: Granular SKU+Week predictions + better baseline methods
+- **Lesson**: Spec-driven development with research prevents costly rework
+- ⚠️ **NEW LESSON**: Don't mark complete until testing validates expected outcomes
 
 ---
 
