@@ -321,16 +321,20 @@ You MUST complete step 4 - calling save_promotion_calendar is mandatory."""
 
         return tool_results
 
-    def _load_causal_parameters(self, file_path: str = "outputs/causal_parameters.json") -> Dict[str, Any]:
+    def _load_causal_parameters(self, file_path: str = None) -> Dict[str, Any]:
         """
         Tool 1: Load causal parameters from Agent A.
 
         Args:
-            file_path: Path to causal parameters JSON
+            file_path: Path to causal parameters JSON (optional, defaults to output_dir/causal_parameters.json)
 
         Returns:
             Dict with status and parameters
         """
+        # Use output_dir if no path specified (supports run-specific directories)
+        if file_path is None:
+            file_path = f"{self.output_dir}/causal_parameters.json"
+
         try:
             with open(file_path, 'r') as f:
                 params = json.load(f)
@@ -690,16 +694,10 @@ You MUST complete step 4 - calling save_promotion_calendar is mandatory."""
         return [
             {
                 "name": "load_causal_parameters",
-                "description": "Load causal parameters (elasticity, lift factors, seasonality) from Agent A's output file",
+                "description": "Load causal parameters (elasticity, lift factors, seasonality) from Agent A's output file. No parameters needed - automatically uses correct output directory.",
                 "input_schema": {
                     "type": "object",
-                    "properties": {
-                        "file_path": {
-                            "type": "string",
-                            "default": "outputs/causal_parameters.json",
-                            "description": "Path to Agent A's causal parameters JSON file"
-                        }
-                    }
+                    "properties": {}
                 }
             },
             {
