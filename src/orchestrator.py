@@ -205,12 +205,11 @@ class TPOOrchestrator:
                 status="INFO"
             )
         else:
-            # Initialize Agent A with API key
-            api_key = os.environ.get("ANTHROPIC_API_KEY")
-            if not api_key:
-                raise ValueError("ANTHROPIC_API_KEY environment variable not set")
-
-            self.analyst = AnalystAgent(api_key=api_key)
+            # Initialize Agent A (it gets API key from environment internally)
+            self.analyst = AnalystAgent(
+                data_dir=self.data_dir,
+                output_dir=str(self.output_dir)
+            )
 
             # Agent A will load data and analyze via its tools
             causal_parameters = self.analyst.analyze()
