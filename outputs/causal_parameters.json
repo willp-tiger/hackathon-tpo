@@ -3,11 +3,11 @@
   "elasticity_model": {
     "base_price_elasticity": 6.906705951073648,
     "discount_lift_factors": {
-      "0-15": 1.4782108318739366,
-      "15-25": 1.8927066099481202,
-      "25-35": 2.51388522401931,
       "35-45": 3.5381588393301002,
-      "45+": 6.462445599572746
+      "45+": 6.462445599572746,
+      "25-35": 2.51388522401931,
+      "0-15": 1.4782108318739366,
+      "15-25": 1.8927066099481202
     }
   },
   "tier_specific_display_lifts": {
@@ -77,11 +77,6 @@
     "51": 1.0566514452789963,
     "52": 0.5064109241242162
   },
-  "approach_log": {
-    "baseline_method": "ppg_week_fixed_effects",
-    "validation_mape": 50.38,
-    "validation_holdout_weeks": 6,
-    "validation_bias_pct": -3.61
-  },
-  "model_quality_notes": "Baseline MAPE of 50.38% is within acceptable range (<60%). There is a slight under-forecasting bias of 3.61%. The model captures tier-specific display effects, with Gold displays showing the highest lift (4.35x), followed by Platinum (4.28x), Silver (3.48x), and Bronze (2.02x). Feature promotions show a negative multiplier of 0.81, suggesting they may be less effective than expected or used during already high-volume periods."
+  "approach_log": "Used PPG-Week Fixed Effects for baseline with 50.38% MAPE (6-week holdout)",
+  "model_quality_notes": "MAPE of 50.38% is acceptable for promotion optimization. Model captures elasticity, display tiers, feature impact, and seasonality effects."
 }

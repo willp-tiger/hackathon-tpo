@@ -83,32 +83,43 @@ class StrategistAgent:
         """
         Get unit price for PPG from Finance.xlsx.
 
+        Note: Finance.xlsx has PPG names with APN suffixes (e.g., "Brand_Group_APN")
+        but Sales data uses just "Brand_Group". We match on prefix.
+
         Args:
-            ppg: Product group identifier
+            ppg: Product group identifier (from Sales data, without APN)
 
         Returns:
-            Unit price (List Price column)
+            Unit price (List Price column), averaged if multiple APNs exist
         """
         if self.finance_data is None:
             raise ValueError("Finance data not loaded - cannot calculate TPR costs")
 
-        ppg_finance = self.finance_data[self.finance_data["PPG"] == ppg]
+        # Match PPGs by prefix (Finance has "Brand_Group_APN", Sales has "Brand_Group")
+        ppg_finance = self.finance_data[self.finance_data["PPG"].str.startswith(ppg + "_", na=False)]
+
         if ppg_finance.empty:
             logger.warning(f"PPG '{ppg}' not found in Finance.xlsx - using default price $10.00")
             return 10.0
 
-        unit_price = ppg_finance.iloc[0]["List Price"]
+        # Average price across all APNs for this PPG
+        unit_price = ppg_finance["List Price"].mean()
+        logger.debug(f"PPG '{ppg}': {len(ppg_finance)} APNs found, avg price ${unit_price:.2f}")
         return unit_price
 
     def _get_display_cost(self, display_tier: str) -> float:
         """
         Get display cost from Promo_config.csv.
 
+        Promo_config.csv structure:
+        - Column 1: "Promo Type" (e.g., "display_gold  ( per week)")
+        - Column 2: "fixed Spend (USD)" (e.g., "400")
+
         Args:
             display_tier: Display tier (bronze, silver, gold, platinum, or none)
 
         Returns:
-            Display cost in dollars
+            Display cost in dollars per week
         """
         if display_tier is None or display_tier.lower() == "none":
             return 0.0
@@ -117,13 +128,25 @@ class StrategistAgent:
             logger.warning("Promo config not loaded - using default display cost $0")
             return 0.0
 
-        tier_col = f"display_{display_tier.lower()}"
-        if tier_col not in self.promo_config.columns:
+        # Match tier in "Promo Type" column (e.g., "display_gold  ( per week)")
+        tier_pattern = f"display_{display_tier.lower()}"
+        matching_rows = self.promo_config[
+            self.promo_config["Promo Type"].str.contains(tier_pattern, case=False, na=False)
+        ]
+
+        if matching_rows.empty:
             logger.warning(f"Display tier '{display_tier}' not found in promo config - using $0")
             return 0.0
 
-        display_cost = self.promo_config[tier_col].iloc[0]
-        return display_cost
+        # Extract cost (handle potential string formatting)
+        cost_str = str(matching_rows.iloc[0]["fixed Spend (USD)"]).strip()
+        try:
+            display_cost = float(cost_str)
+            logger.debug(f"Display tier '{display_tier}': ${display_cost}")
+            return display_cost
+        except ValueError:
+            logger.warning(f"Invalid display cost format: '{cost_str}' - using $0")
+            return 0.0
 
     def generate_calendar(self, feedback: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
