@@ -116,27 +116,67 @@ class JourneyTracker:
             # Event line
             f.write(f"{status_icon} [{timestamp_str} | +{elapsed_str}] {event['description']}\n")
 
-            # Details (if any)
+            # Details (if any) - format as ASCII table when possible
             if event['details']:
-                for key, value in event['details'].items():
-                    # Format value nicely
-                    if isinstance(value, (int, float)):
-                        if isinstance(value, float) and value > 1000:
-                            value_str = f"{value:,.2f}"
-                        elif isinstance(value, float):
-                            value_str = f"{value:.4f}"
-                        else:
-                            value_str = str(value)
-                    elif isinstance(value, dict):
-                        value_str = json.dumps(value, indent=2)
-                    elif isinstance(value, list) and len(value) > 5:
-                        value_str = f"[{len(value)} items]"
-                    else:
-                        value_str = str(value)
-
-                    f.write(f"    {key}: {value_str}\n")
+                details_text = self._format_details_as_table(event['details'])
+                if details_text:
+                    f.write(details_text)
 
             f.write("\n")
+
+    def _format_details_as_table(self, details: Dict[str, Any]) -> str:
+        """Format details as ASCII table for better readability."""
+        lines = []
+
+        for key, value in details.items():
+            # Skip None or empty values
+            if value is None:
+                continue
+
+            # Format value based on type
+            if isinstance(value, (int, float)):
+                if isinstance(value, float) and value > 1000:
+                    value_str = f"{value:,.2f}"
+                elif isinstance(value, float):
+                    value_str = f"{value:.4f}"
+                else:
+                    value_str = f"{value:,}"
+                lines.append(f"    {key:.<30} {value_str}")
+
+            elif isinstance(value, dict):
+                # Format nested dict as indented key-value pairs
+                lines.append(f"    {key}:")
+                for sub_key, sub_value in value.items():
+                    if isinstance(sub_value, (int, float)):
+                        if isinstance(sub_value, float):
+                            lines.append(f"      {sub_key:.<28} {sub_value:,.2f}")
+                        else:
+                            lines.append(f"      {sub_key:.<28} {sub_value:,}")
+                    else:
+                        sub_str = str(sub_value)
+                        if len(sub_str) < 50:
+                            lines.append(f"      {sub_key:.<28} {sub_str}")
+
+            elif isinstance(value, list):
+                if len(value) == 0:
+                    continue
+                elif len(value) <= 5:
+                    # Show short lists inline
+                    list_str = ', '.join([str(v) for v in value])
+                    if len(list_str) < 60:
+                        lines.append(f"    {key:.<30} {list_str}")
+                    else:
+                        lines.append(f"    {key}: {len(value)} items")
+                else:
+                    lines.append(f"    {key:.<30} {len(value)} items")
+
+            else:
+                value_str = str(value)
+                # Only show if not too long
+                if len(value_str) < 70:
+                    lines.append(f"    {key:.<30} {value_str}")
+
+        return '\n'.join(lines) + '\n' if lines else ''
 
     def _is_new_phase(self, phase: str) -> bool:
         """Check if this is a new phase (for headers)."""
