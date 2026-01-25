@@ -395,11 +395,16 @@ class AnalystAgent:
         """Load and preview sales data."""
         self.sales_data = self.data_loader.load_sales()
 
+        # Convert sample rows to JSON-serializable format
+        sample_rows = self.sales_data.head(10).copy()
+        for col in sample_rows.select_dtypes(include=['datetime64']).columns:
+            sample_rows[col] = sample_rows[col].astype(str)
+
         return {
             "shape": {"rows": len(self.sales_data), "columns": len(self.sales_data.columns)},
             "columns": list(self.sales_data.columns),
             "dtypes": {col: str(dtype) for col, dtype in self.sales_data.dtypes.items()},
-            "missing_values": self.sales_data.isnull().sum().to_dict(),
+            "missing_values": {k: int(v) for k, v in self.sales_data.isnull().sum().to_dict().items()},
             "date_range": {
                 "min": str(self.sales_data['Date'].min()),
                 "max": str(self.sales_data['Date'].max()),
@@ -410,18 +415,23 @@ class AnalystAgent:
                 "ppgs": int(self.sales_data['PPG'].nunique()),
                 "promo_groups": int(self.sales_data['Promo.Group'].nunique())
             },
-            "tpr_distribution": self.sales_data['TPR'].value_counts().to_dict(),
-            "sample_rows": self.sales_data.head(10).to_dict(orient='records')
+            "tpr_distribution": {str(k): int(v) for k, v in self.sales_data['TPR'].value_counts().to_dict().items()},
+            "sample_rows": sample_rows.to_dict(orient='records')
         }
 
     def _tool_load_promotion_preview(self) -> Dict[str, Any]:
         """Load and preview promotion data."""
         self.promo_data = self.data_loader.load_promotions()
 
+        # Convert sample rows to JSON-serializable format
+        sample_rows = self.promo_data.head(10).copy()
+        for col in sample_rows.select_dtypes(include=['datetime64']).columns:
+            sample_rows[col] = sample_rows[col].astype(str)
+
         return {
             "shape": {"rows": len(self.promo_data), "columns": len(self.promo_data.columns)},
             "columns": list(self.promo_data.columns),
-            "sample_rows": self.promo_data.head(10).to_dict(orient='records')
+            "sample_rows": sample_rows.to_dict(orient='records')
         }
 
     def _tool_calculate_baseline_global_avg(self) -> Dict[str, Any]:
