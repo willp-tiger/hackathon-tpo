@@ -429,14 +429,33 @@ You MUST complete step 4 - calling save_promotion_calendar is mandatory."""
 
         retailers = ["Retailer 0", "Retailer 1"]
 
+        # Track last week scheduled per PPG-Retailer to enforce gap constraint
+        from collections import defaultdict
+        last_week_scheduled = defaultdict(lambda: -10)  # Start at -10 so first event is always valid
+
+        # Generate events with constraint awareness
+        MIN_GAP_WEEKS = 4  # Minimum weeks between promotions for same PPG-Retailer
+
         for ppg in ppgs:
             for retailer in retailers:
-                # Add a few promotions per PPG-Retailer
-                count = 4 if retailer == "Retailer 0" else 6
+                # Target events per PPG-Retailer based on retailer capacity
+                target_events = 4 if retailer == "Retailer 0" else 6
+                events_added = 0
 
-                for i, (week, season_factor) in enumerate(weeks_ranked[:count]):
+                # Iterate through weeks in seasonality order
+                for week, season_factor in weeks_ranked:
                     if total_spend >= target_spend:
                         break
+
+                    if events_added >= target_events:
+                        break
+
+                    # Check gap constraint: has it been at least MIN_GAP_WEEKS since last promo?
+                    key = (ppg, retailer)
+                    weeks_since_last = week - last_week_scheduled[key]
+
+                    if weeks_since_last < MIN_GAP_WEEKS:
+                        continue  # Skip this week, too close to last promotion
 
                     # Choose tactics based on objective
                     if objective == "volume":
@@ -457,9 +476,11 @@ You MUST complete step 4 - calling save_promotion_calendar is mandatory."""
 
                     promo_cost = tpr_cost + display_cost
 
+                    # Check budget constraint
                     if total_spend + promo_cost > target_spend:
-                        break
+                        continue  # Skip this event, would exceed budget
 
+                    # Add event
                     calendar_events.append({
                         "week": week,
                         "ppg": ppg,
@@ -467,10 +488,12 @@ You MUST complete step 4 - calling save_promotion_calendar is mandatory."""
                         "discount_depth": discount_depth,
                         "display_tier": display_tier,
                         "feature_active": False,
-                        "reasoning": f"Selected week {week} (seasonality {season_factor:.2f}x) for {ppg} at {retailer}"
+                        "reasoning": f"Week {week} (seasonality {season_factor:.2f}x) for {ppg} at {retailer}"
                     })
 
                     total_spend += promo_cost
+                    last_week_scheduled[key] = week
+                    events_added += 1
 
         self.current_calendar = {
             "calendar_events": calendar_events,
@@ -507,34 +530,88 @@ You MUST complete step 4 - calling save_promotion_calendar is mandatory."""
                 "message": "No current calendar to adjust. Generate one first."
             }
 
-        calendar_events = self.current_calendar.get("calendar_events", [])
+        calendar_events = self.current_calendar.get("calendar_events", []).copy()
+        budget_limit = self.budget_limit
         adjustments_made = []
+        baseline_velocity = self.causal_parameters.get("baseline_velocity_avg", 0)
 
-        for violation in violations:
-            violation_type = violation.get("type", "").lower()
+        # Process violations in priority order: budget first, then gaps
+        has_budget_violation = any("budget" in v.get("type", "").lower() for v in violations)
+        has_gap_violation = any("gap" in v.get("type", "").lower() for v in violations)
 
-            if "budget" in violation_type:
-                # Remove lowest-ROI events until under budget
-                # Simplified: remove last 20% of events
-                remove_count = max(1, len(calendar_events) // 5)
-                calendar_events = calendar_events[:-remove_count]
-                adjustments_made.append(f"Removed {remove_count} events to reduce budget")
+        # Fix budget violations by removing highest-cost events
+        if has_budget_violation:
+            # Calculate cost per event
+            events_with_cost = []
+            for event in calendar_events:
+                ppg = event.get("ppg")
+                discount_depth = event.get("discount_depth", 0)
+                display_tier = event.get("display_tier", "none")
 
-            elif "gap" in violation_type:
-                # Simplified: remove conflicting events (Claude will provide better logic via natural language)
-                adjustments_made.append("Gap violations noted - regeneration recommended")
+                unit_price = self._get_unit_price(ppg)
+                tpr_cost = baseline_velocity * discount_depth * unit_price
+                display_cost = self._get_display_cost(display_tier)
+                total_cost = tpr_cost + display_cost
 
-            elif "frequency" in violation_type:
-                # Reduce events for over-frequency PPG-Retailers
-                adjustments_made.append("Frequency violations noted - regeneration recommended")
+                events_with_cost.append((event, total_cost))
+
+            # Sort by cost (highest first) and remove until under budget
+            events_with_cost.sort(key=lambda x: x[1], reverse=True)
+
+            # Calculate current total
+            current_total = sum(cost for _, cost in events_with_cost)
+
+            # Remove events until under budget
+            removed_count = 0
+            while current_total > budget_limit and events_with_cost:
+                removed_event, removed_cost = events_with_cost.pop(0)
+                current_total -= removed_cost
+                removed_count += 1
+
+            calendar_events = [event for event, _ in events_with_cost]
+            adjustments_made.append(f"Removed {removed_count} highest-cost events to meet budget (now ${current_total:,.0f})")
+
+        # Fix gap violations by spreading out events
+        if has_gap_violation:
+            # Group events by PPG-Retailer
+            from collections import defaultdict
+            ppg_retailer_events = defaultdict(list)
+
+            for event in calendar_events:
+                key = (event.get("ppg"), event.get("retailer"))
+                ppg_retailer_events[key].append(event)
+
+            # For each PPG-Retailer, ensure min 4-week gaps
+            fixed_events = []
+            gap_fixes = 0
+
+            for (ppg, retailer), events in ppg_retailer_events.items():
+                # Sort by week
+                events_sorted = sorted(events, key=lambda e: e.get("week", 0))
+
+                # Keep first event, check gaps for rest
+                if events_sorted:
+                    fixed_events.append(events_sorted[0])
+                    last_week = events_sorted[0].get("week", 0)
+
+                    for event in events_sorted[1:]:
+                        week = event.get("week", 0)
+                        if week - last_week >= 4:  # Min gap is 4 weeks
+                            fixed_events.append(event)
+                            last_week = week
+                        else:
+                            gap_fixes += 1
+                            # Skip this event (too close to previous)
+
+            calendar_events = fixed_events
+            if gap_fixes > 0:
+                adjustments_made.append(f"Removed {gap_fixes} events that violated 4-week minimum gap rule")
 
         # Update current calendar
         self.current_calendar["calendar_events"] = calendar_events
 
-        # Recalculate total spend using SAME logic as generation
+        # Recalculate total spend
         total_spend = 0
-        baseline_velocity = self.causal_parameters.get("baseline_velocity_avg", 0)
-
         for event in calendar_events:
             ppg = event.get("ppg")
             discount_depth = event.get("discount_depth", 0)
@@ -552,7 +629,8 @@ You MUST complete step 4 - calling save_promotion_calendar is mandatory."""
             "adjustments": adjustments_made,
             "new_event_count": len(calendar_events),
             "new_total_spend": round(total_spend, 2),
-            "recommendation": "Claude should regenerate calendar with constraint awareness rather than just removing events"
+            "budget_utilization_pct": round(total_spend / budget_limit * 100, 1),
+            "message": "Calendar adjusted successfully. Use calculate_projected_impact and save_promotion_calendar to finalize."
         }
 
     def _calculate_projected_impact(self, calendar_events: List[Dict]) -> Dict[str, Any]:
