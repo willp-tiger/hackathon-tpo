@@ -125,8 +125,8 @@ class JourneyTracker:
             f.write("\n")
 
     def _format_details_as_table(self, details: Dict[str, Any]) -> str:
-        """Format details as ASCII table for better readability."""
-        lines = []
+        """Format details as compact horizontal key-value pairs."""
+        items = []
 
         for key, value in details.items():
             # Skip None or empty values
@@ -136,47 +136,55 @@ class JourneyTracker:
             # Format value based on type
             if isinstance(value, (int, float)):
                 if isinstance(value, float) and value > 1000:
-                    value_str = f"{value:,.2f}"
+                    value_str = f"{value:,.1f}"
                 elif isinstance(value, float):
-                    value_str = f"{value:.4f}"
+                    value_str = f"{value:.2f}"
                 else:
                     value_str = f"{value:,}"
-                lines.append(f"    {key:.<30} {value_str}")
+                items.append(f"{key}={value_str}")
 
             elif isinstance(value, dict):
-                # Format nested dict as indented key-value pairs
-                lines.append(f"    {key}:")
+                # Format nested dict as inline key=value pairs
+                dict_items = []
                 for sub_key, sub_value in value.items():
                     if isinstance(sub_value, (int, float)):
                         if isinstance(sub_value, float):
-                            lines.append(f"      {sub_key:.<28} {sub_value:,.2f}")
+                            dict_items.append(f"{sub_key}={sub_value:.2f}")
                         else:
-                            lines.append(f"      {sub_key:.<28} {sub_value:,}")
+                            dict_items.append(f"{sub_key}={sub_value:,}")
                     else:
                         sub_str = str(sub_value)
-                        if len(sub_str) < 50:
-                            lines.append(f"      {sub_key:.<28} {sub_str}")
+                        if len(sub_str) < 20:
+                            dict_items.append(f"{sub_key}={sub_str}")
+
+                if dict_items:
+                    # Put dict items on same line with parent key
+                    items.append(f"{key}[{', '.join(dict_items[:4])}]")
 
             elif isinstance(value, list):
                 if len(value) == 0:
                     continue
-                elif len(value) <= 5:
-                    # Show short lists inline
-                    list_str = ', '.join([str(v) for v in value])
-                    if len(list_str) < 60:
-                        lines.append(f"    {key:.<30} {list_str}")
-                    else:
-                        lines.append(f"    {key}: {len(value)} items")
+                elif len(value) <= 3:
+                    list_str = ', '.join([str(v)[:15] for v in value])
+                    items.append(f"{key}=[{list_str}]")
                 else:
-                    lines.append(f"    {key:.<30} {len(value)} items")
+                    items.append(f"{key}=[{len(value)} items]")
 
             else:
                 value_str = str(value)
-                # Only show if not too long
-                if len(value_str) < 70:
-                    lines.append(f"    {key:.<30} {value_str}")
+                if len(value_str) < 30:
+                    items.append(f"{key}={value_str}")
 
-        return '\n'.join(lines) + '\n' if lines else ''
+        if not items:
+            return ''
+
+        # Pack items horizontally (3 per line for compact display)
+        output_lines = []
+        for i in range(0, len(items), 3):
+            batch = items[i:i+3]
+            output_lines.append("    " + " | ".join(batch))
+
+        return '\n'.join(output_lines) + '\n' if output_lines else ''
 
     def _is_new_phase(self, phase: str) -> bool:
         """Check if this is a new phase (for headers)."""
