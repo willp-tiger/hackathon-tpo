@@ -8,11 +8,13 @@ to generate an optimized promotion calendar through an iterative feedback loop.
 import json
 import os
 from pathlib import Path
+from datetime import datetime
 from typing import Dict, Any, Optional
 from loguru import logger
 
 from .agents import AnalystAgent, StrategistAgent, AuditorAgent
 from .utils import DataLoader, validate_calendar_format
+from .utils.report_generator import ExecutionReportGenerator, generate_quick_summary
 
 
 class TPOOrchestrator:
@@ -75,6 +77,9 @@ class TPOOrchestrator:
         logger.info(f"Budget: ${budget:,.0f}")
         logger.info("=" * 80)
 
+        # Track start time for execution summary
+        self.start_time = datetime.now()
+
         self._log_event("workflow_start", {
             "objective": objective,
             "budget": budget
@@ -104,6 +109,17 @@ class TPOOrchestrator:
         # Step 6: Save all outputs
         logger.info("\n[STEP 6] Saving outputs...")
         self._save_outputs(final_calendar, reports)
+
+        # Step 7: Generate comprehensive execution summary
+        logger.info("\n[STEP 7] Generating execution summary report...")
+        end_time = datetime.now()
+        self._generate_execution_summary(
+            objective=objective,
+            budget=budget,
+            audit_report=audit_report,
+            start_time=self.start_time,
+            end_time=end_time
+        )
 
         logger.info("\n" + "=" * 80)
         logger.info("TPO Optimization Complete!")
@@ -392,3 +408,42 @@ class TPOOrchestrator:
             "event": event,
             "data": data
         })
+
+    def _generate_execution_summary(
+        self,
+        objective: str,
+        budget: float,
+        audit_report: Dict[str, Any],
+        start_time: datetime,
+        end_time: datetime
+    ):
+        """Generate comprehensive execution summary report."""
+        # Prepare optimization result for report generator
+        optimization_result = {
+            'status': audit_report.get('status', 'UNKNOWN'),
+            'iterations': self.strategist.iteration if self.strategist else 0,
+            'objective': objective,
+            'violations_history': []  # Could be enhanced to track all iterations
+        }
+
+        # Add final violations if rejected
+        if audit_report.get('status') == 'REJECTED':
+            violations = audit_report.get('violations', [])
+            if violations:
+                optimization_result['violations_history'].append(violations)
+
+        # Generate comprehensive report
+        report_gen = ExecutionReportGenerator(output_dir=str(self.output_dir))
+        report = report_gen.generate_comprehensive_report(
+            objective=objective,
+            budget=budget,
+            optimization_result=optimization_result,
+            start_time=start_time,
+            end_time=end_time
+        )
+
+        logger.info(f"Saved: {report_gen.report_path}")
+
+        # Also print quick summary to console
+        quick_summary = generate_quick_summary(output_dir=str(self.output_dir))
+        print("\n" + quick_summary)
