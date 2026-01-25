@@ -77,6 +77,11 @@ dmypy.json
 *.bak
 *.swp
 *~
+nul
+test_output*.txt
+
+# Pytest
+.pytest_cache/
 
 # OS
 Thumbs.db
