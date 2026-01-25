@@ -286,9 +286,10 @@ class TPOOrchestrator:
 
             feedback = audit_report
 
-        # Max iterations reached without approval
-        logger.error(f"Max iterations ({self.max_iterations}) reached without approval")
-        raise RuntimeError("Failed to generate approved calendar within iteration limit")
+        # Max iterations reached without approval - return last calendar anyway
+        logger.warning(f"Max iterations ({self.max_iterations}) reached without approval")
+        logger.warning(f"Returning last calendar (status: {audit_report.get('status', 'UNKNOWN')})")
+        return calendar, audit_report
 
     def _generate_reports(
         self,

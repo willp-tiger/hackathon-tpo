@@ -66,6 +66,9 @@ class ExecutionReportGenerator:
         # Data Quality & Validation
         report_sections.append(self._validation_summary())
 
+        # Journey Timeline
+        report_sections.append(self._journey_timeline())
+
         # Deliverables Checklist
         report_sections.append(self._deliverables_checklist())
 
@@ -412,6 +415,62 @@ DATA SOURCES:
 GRANULARITY:           PPG-Retailer-Week (11 PPGs x 2 Retailers x 113 Weeks)
 """
 
+    def _journey_timeline(self) -> str:
+        """Summarize the complete optimization journey."""
+        journey_path = self.output_dir / "OPTIMIZATION_JOURNEY.txt"
+
+        if not journey_path.exists():
+            return f"""{'='*80}
+OPTIMIZATION JOURNEY TIMELINE
+{'='*80}
+Status: NO JOURNEY LOG FOUND
+
+Note: Run with journey tracking enabled to see complete timeline.
+"""
+
+        # Read journey log and extract key milestones
+        try:
+            with open(journey_path, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+
+            # Extract phase headers and completion events
+            timeline = []
+            for line in lines:
+                # Look for phase headers or completion markers
+                if '=' * 40 in line and 'STEP' in lines[lines.index(line) + 1]:
+                    phase_line = lines[lines.index(line) + 1].strip()
+                    timeline.append(f"  {phase_line}")
+                elif '[+]' in line and ('complete' in line.lower() or 'generated' in line.lower() or 'approved' in line.lower()):
+                    # Extract timestamp and description
+                    if '|' in line:
+                        parts = line.split(']', 2)
+                        if len(parts) >= 3:
+                            desc = parts[2].strip()
+                            timeline.append(f"    - {desc}")
+
+            timeline_text = '\n'.join(timeline[:30])  # Limit to 30 lines
+
+            return f"""{'='*80}
+OPTIMIZATION JOURNEY TIMELINE
+{'='*80}
+
+Complete journey log: outputs/OPTIMIZATION_JOURNEY.txt
+
+KEY MILESTONES:
+{timeline_text}
+
+For complete details with timestamps, see OPTIMIZATION_JOURNEY.txt
+"""
+
+        except Exception as e:
+            return f"""{'='*80}
+OPTIMIZATION JOURNEY TIMELINE
+{'='*80}
+Error reading journey log: {e}
+
+See outputs/OPTIMIZATION_JOURNEY.txt for details.
+"""
+
     def _deliverables_checklist(self) -> str:
         """Show deliverables checklist."""
         deliverables = [
@@ -420,6 +479,7 @@ GRANULARITY:           PPG-Retailer-Week (11 PPGs x 2 Retailers x 113 Weeks)
             ("baseline_validation.csv", "Forecast accuracy (MAPE)"),
             ("agent_execution_log.txt", "Full conversation log with rejection loop"),
             ("causal_parameters.json", "Agent A outputs"),
+            ("OPTIMIZATION_JOURNEY.txt", "Complete journey log (real-time)"),
             ("EXECUTION_SUMMARY.txt", "This comprehensive report")
         ]
 
