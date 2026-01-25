@@ -108,7 +108,7 @@ class TPOOrchestrator:
         logger.info("\n" + "=" * 80)
         logger.info("TPO Optimization Complete!")
         logger.info(f"Final Status: {audit_report['status']}")
-        logger.info(f"Total Iterations: {self.strategist.get_iteration_count()}")
+        logger.info(f"Total Iterations: {self.strategist.iteration if self.strategist else 0}")
         logger.info("=" * 80)
 
         return {
@@ -182,13 +182,10 @@ class TPOOrchestrator:
 
     def _initialize_auditor(self, data: Dict[str, Any]):
         """Initialize the Auditor agent."""
-        api_key = os.environ.get("ANTHROPIC_API_KEY")
-        if not api_key:
-            raise ValueError("ANTHROPIC_API_KEY environment variable not set")
-
+        # AuditorAgent gets API key from environment and uses data_dir
         self.auditor = AuditorAgent(
-            api_key=api_key,
-            budget_limit=self.strategist.budget_limit if self.strategist else 1000000
+            data_dir=self.data_dir,
+            output_dir=str(self.output_dir)
         )
 
         self._log_event("auditor_initialized", {})
@@ -224,7 +221,19 @@ class TPOOrchestrator:
 
             # Auditor reviews calendar
             self._log_event("auditor_review_start", {"iteration": iteration})
-            audit_report = self.auditor.validate_calendar(calendar)
+
+            # Build constraints dict for auditor
+            constraints = {
+                "budget_limit": self.strategist.budget_limit if self.strategist else 1000000,
+                "min_gap_weeks": 4,  # Default, can be retailer-specific
+                "max_promos_per_ppg": 12,  # Default, can be retailer-specific
+                "blackout_weeks": []  # From data if available
+            }
+
+            # Audit the calendar (Agent B saves to promotion_calendar.json)
+            calendar_path = str(self.output_dir / "promotion_calendar.json")
+            audit_report = self.auditor.audit(calendar_path, constraints)
+
             self._log_event("auditor_review_complete", {
                 "iteration": iteration,
                 "status": audit_report["status"],
