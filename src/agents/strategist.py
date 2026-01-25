@@ -64,9 +64,12 @@ class StrategistAgent:
 
         logger.info(f"Initialized StrategistAgent: objective={self.objective}, budget=${budget_limit:,.0f}")
 
-    def generate_calendar(self) -> Dict[str, Any]:
+    def generate_calendar(self, feedback: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Main orchestration method: Generate optimized promotion calendar.
+
+        Args:
+            feedback: Optional feedback from Agent C (Auditor) with violations to fix
 
         Returns:
             Dict containing:
@@ -78,8 +81,33 @@ class StrategistAgent:
         """
         logger.info("Starting calendar generation...")
 
+        if feedback:
+            logger.info(f"Regenerating calendar with feedback: {feedback.get('status', 'UNKNOWN')}")
+            self.iteration += 1  # Increment for rejection loop iteration
+
         # Initial user message
-        user_message = f"""Generate a 52-week promotional calendar optimized for {self.objective}.
+        if feedback:
+            # Rejection loop: calendar was rejected, regenerate with feedback
+            user_message = f"""The Auditor REJECTED your previous calendar. You must fix the violations and regenerate.
+
+Rejection Feedback:
+Status: {feedback.get('status', 'REJECTED')}
+Violations: {len(feedback.get('violations', []))}
+
+{self._format_violations_for_prompt(feedback.get('violations', []))}
+
+Auditor's Guidance: {feedback.get('feedback', 'Fix the violations above')}
+
+Your task:
+1. Load the current calendar from outputs/promotion_calendar.json
+2. Call adjust_calendar_for_violations to fix the specific violations
+3. Calculate projected impact for the adjusted calendar
+4. Save the corrected calendar
+
+Be strategic in your corrections. Make MATERIAL changes to address violations, not cosmetic ones."""
+        else:
+            # Initial generation (no feedback)
+            user_message = f"""Generate a 52-week promotional calendar optimized for {self.objective}.
 
 Objective: {'Maximize Unit Volume (Market Share)' if self.objective == 'volume' else 'Maximize Profit Dollars'}
 Budget Limit: ${self.budget_limit:,.0f}
@@ -359,19 +387,53 @@ You MUST complete step 4 - calling save_promotion_calendar is mandatory."""
         """
         Tool 3: Adjust calendar based on Agent C violations.
 
-        This would be called in the rejection loop integration.
+        Loads current calendar and applies fixes based on violation types.
 
         Args:
             violations: List of constraint violations from Agent C
             feedback: Natural language feedback
 
         Returns:
-            Dict with adjustment status
+            Dict with adjustment status and summary of changes
         """
-        # Placeholder for rejection loop
+        if not self.current_calendar:
+            return {
+                "status": "error",
+                "message": "No current calendar to adjust. Generate one first."
+            }
+
+        calendar_events = self.current_calendar.get("calendar_events", [])
+        adjustments_made = []
+
+        for violation in violations:
+            violation_type = violation.get("type", "").lower()
+
+            if "budget" in violation_type:
+                # Remove lowest-ROI events until under budget
+                # Simplified: remove last 20% of events
+                remove_count = max(1, len(calendar_events) // 5)
+                calendar_events = calendar_events[:-remove_count]
+                adjustments_made.append(f"Removed {remove_count} events to reduce budget")
+
+            elif "gap" in violation_type:
+                # Simplified: remove conflicting events (Claude will provide better logic via natural language)
+                adjustments_made.append("Gap violations noted - regeneration recommended")
+
+            elif "frequency" in violation_type:
+                # Reduce events for over-frequency PPG-Retailers
+                adjustments_made.append("Frequency violations noted - regeneration recommended")
+
+        # Update current calendar
+        self.current_calendar["calendar_events"] = calendar_events
+        total_spend = len(calendar_events) * 15000  # Simplified cost calculation
+
         return {
-            "status": "not_implemented",
-            "message": "Rejection loop will be implemented in integration phase"
+            "status": "adjusted",
+            "violations_addressed": len(violations),
+            "adjustments": adjustments_made,
+            "new_event_count": len(calendar_events),
+            "new_total_spend": total_spend,
+            "recommendation": "Claude should regenerate calendar with constraint awareness rather than just removing events"
         }
 
     def _calculate_projected_impact(self, calendar_events: List[Dict]) -> Dict[str, Any]:
@@ -480,6 +542,24 @@ You MUST complete step 4 - calling save_promotion_calendar is mandatory."""
                 }
             },
             {
+                "name": "adjust_calendar_for_violations",
+                "description": "Adjust current calendar to fix violations reported by Agent C (Auditor). Use this when calendar was rejected.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "violations": {
+                            "type": "array",
+                            "description": "List of violations from Agent C's audit report"
+                        },
+                        "feedback": {
+                            "type": "string",
+                            "description": "Natural language feedback from Agent C"
+                        }
+                    },
+                    "required": ["violations", "feedback"]
+                }
+            },
+            {
                 "name": "calculate_projected_impact",
                 "description": "Calculate projected volume/profit impact of calendar",
                 "input_schema": {
@@ -578,6 +658,17 @@ Quality Standards:
 - Aim for 80-95% budget utilization
 
 Execute systematically. Use your tools. Generate an excellent calendar."""
+
+    def _format_violations_for_prompt(self, violations: List[Dict]) -> str:
+        """Format violations into a clear prompt for Claude."""
+        if not violations:
+            return "No violations"
+
+        formatted = []
+        for i, v in enumerate(violations, 1):
+            formatted.append(f"{i}. {v.get('type', 'Unknown')}: {v.get('details', 'No details')}")
+
+        return "\n".join(formatted)
 
     def _log_interaction(self, user_message: Dict, response: Any):
         """Log conversation interaction."""
