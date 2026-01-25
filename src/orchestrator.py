@@ -260,7 +260,8 @@ class TPOOrchestrator:
             api_key=api_key,
             objective=objective,
             budget_limit=budget,
-            max_iterations=self.max_iterations
+            max_iterations=self.max_iterations,
+            output_dir=str(self.output_dir)
         )
 
         self._log_event("strategist_initialized", {"objective": objective})
@@ -414,10 +415,15 @@ class TPOOrchestrator:
                 # Format violation details based on type or category
                 vtype = violation.get('type', violation.get('category', 'UNKNOWN'))
 
-                if 'gap' in vtype.lower() or vtype == 'GAP_VIOLATION':
+                # Use 'details' field first, fallback to type-specific formatting
+                if 'details' in violation:
+                    detail_str = violation['details']
+                elif 'gap' in vtype.lower() or vtype == 'GAP_VIOLATION':
                     detail_str = f"PPG {violation.get('ppg', 'N/A')} at Retailer {violation.get('retailer', 'N/A')}: weeks {violation.get('week1', 'N/A')}-{violation.get('week2', 'N/A')} (gap: {violation.get('gap', 'N/A')}, required: {violation.get('min_required', 'N/A')})"
                 elif 'budget' in vtype.lower() or vtype == 'BUDGET_VIOLATION':
-                    detail_str = f"Total spend ${violation.get('total_spend', 'N/A'):,.0f} exceeds budget ${violation.get('budget_limit', 'N/A'):,.0f}"
+                    # Use 'overage' field if available
+                    overage = violation.get('overage', 'N/A')
+                    detail_str = f"Budget exceeded by ${overage:,.0f}" if isinstance(overage, (int, float)) else "Budget exceeded"
                 elif 'frequency' in vtype.lower() or vtype == 'FREQUENCY_VIOLATION':
                     detail_str = f"PPG {violation.get('ppg', 'N/A')}: {violation.get('count', 0)} promotions exceeds limit {violation.get('max_allowed', 0)}"
                 elif 'blackout' in vtype.lower() or vtype == 'BLACKOUT_VIOLATION':

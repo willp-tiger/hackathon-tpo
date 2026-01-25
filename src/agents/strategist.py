@@ -34,7 +34,8 @@ class StrategistAgent:
         api_key: str,
         objective: str,
         budget_limit: float,
-        max_iterations: int = 10
+        max_iterations: int = 10,
+        output_dir: str = "outputs"
     ):
         """
         Initialize the Strategist Agent.
@@ -44,11 +45,13 @@ class StrategistAgent:
             objective: Optimization objective ('volume' or 'profit')
             budget_limit: Maximum promotional spend in dollars
             max_iterations: Maximum rejection loop iterations (default: 10)
+            output_dir: Directory for output files (default: "outputs")
         """
         self.client = Anthropic(api_key=api_key)
         self.objective = objective.lower()
         self.budget_limit = budget_limit
         self.max_iterations = max_iterations
+        self.output_dir = output_dir
 
         # Validate objective
         if self.objective not in ['volume', 'profit']:
@@ -99,7 +102,7 @@ Violations: {len(feedback.get('violations', []))}
 Auditor's Guidance: {feedback.get('feedback', 'Fix the violations above')}
 
 Your task:
-1. Load the current calendar from outputs/promotion_calendar.json
+1. Load the current calendar (already saved to {self.output_dir}/promotion_calendar.json)
 2. Call adjust_calendar_for_violations to fix the specific violations
 3. Calculate projected impact for the adjusted calendar
 4. Save the corrected calendar
@@ -380,7 +383,8 @@ You MUST complete step 4 - calling save_promotion_calendar is mandatory."""
             "event_count": len(calendar_events),
             "total_spend": total_spend,
             "budget_utilization": total_spend / budget_limit * 100,
-            "summary": f"Generated {len(calendar_events)} promotion events, ${total_spend:,.0f} spend ({total_spend/budget_limit*100:.1f}% of budget)"
+            "summary": f"Generated {len(calendar_events)} promotion events, ${total_spend:,.0f} spend ({total_spend/budget_limit*100:.1f}% of budget)",
+            "calendar_events": calendar_events  # Return actual events for saving
         }
 
     def _adjust_calendar_for_violations(self, violations: List[Dict], feedback: str) -> Dict[str, Any]:
@@ -446,12 +450,74 @@ You MUST complete step 4 - calling save_promotion_calendar is mandatory."""
         Returns:
             Dict with projected metrics
         """
-        # Placeholder calculation
+        if not self.causal_parameters:
+            return {
+                "projected_volume": 0,
+                "projected_profit": 0,
+                "projected_roi": 0,
+                "status": "error",
+                "error": "Causal parameters not loaded"
+            }
+
+        # Extract causal parameters
+        baseline_velocity = self.causal_parameters.get("baseline_velocity_avg", 0)
+        elasticity_model = self.causal_parameters.get("elasticity_model", {})
+        discount_lifts = elasticity_model.get("discount_lift_factors", {})
+        display_lift_multiplier = elasticity_model.get("display_lift_multiplier", 1.0)
+        seasonality_factors = self.causal_parameters.get("seasonality_factors", {})
+
+        total_incremental_volume = 0
+        total_baseline_volume = 0
+        total_cost = 0
+
+        for event in calendar_events:
+            week = event.get("week")
+            discount_depth = event.get("discount_depth", 0)
+            display_active = event.get("display_active", False)
+
+            # Get seasonality factor
+            seasonality = seasonality_factors.get(str(week), 1.0)
+
+            # Get discount lift based on depth bucket
+            discount_pct = discount_depth * 100
+            if discount_pct < 15:
+                lift = discount_lifts.get("0-15", 1.5)
+            elif discount_pct < 25:
+                lift = discount_lifts.get("15-25", 2.0)
+            elif discount_pct < 35:
+                lift = discount_lifts.get("25-35", 2.5)
+            elif discount_pct < 45:
+                lift = discount_lifts.get("35-45", 3.5)
+            else:
+                lift = discount_lifts.get("45+", 4.0)
+
+            # Calculate baseline for this week
+            week_baseline = baseline_velocity * seasonality
+
+            # Apply lifts
+            promo_volume = week_baseline * lift
+            if display_active:
+                promo_volume *= display_lift_multiplier
+
+            # Incremental volume
+            incremental_volume = promo_volume - week_baseline
+            total_incremental_volume += incremental_volume
+            total_baseline_volume += week_baseline
+
+            # Estimate cost (simplified: TPR cost)
+            total_cost += event.get("tpr_cost", 0) + event.get("display_cost", 0)
+
+        # Calculate projected metrics
+        projected_volume = total_baseline_volume + total_incremental_volume
+        projected_roi = (total_incremental_volume / total_cost * 100) if total_cost > 0 else 0
+
         return {
-            "projected_volume": 0,
-            "projected_profit": 0,
-            "projected_roi": 0,
-            "status": "placeholder"
+            "projected_volume": round(projected_volume, 2),
+            "incremental_volume": round(total_incremental_volume, 2),
+            "baseline_volume": round(total_baseline_volume, 2),
+            "total_cost": round(total_cost, 2),
+            "projected_roi": round(projected_roi, 2),
+            "status": "calculated"
         }
 
     def _save_promotion_calendar(self, calendar_events: List[Dict], metadata: Dict) -> Dict[str, Any]:
@@ -465,7 +531,8 @@ You MUST complete step 4 - calling save_promotion_calendar is mandatory."""
         Returns:
             Dict with save status
         """
-        output_file = "outputs/promotion_calendar.json"
+        from pathlib import Path
+        output_file = str(Path(self.output_dir) / "promotion_calendar.json")
 
         calendar_data = {
             "objective": self.objective,
@@ -519,7 +586,7 @@ You MUST complete step 4 - calling save_promotion_calendar is mandatory."""
             },
             {
                 "name": "generate_initial_calendar",
-                "description": "Generate initial promotional calendar using greedy optimization heuristic",
+                "description": "Generate initial promotional calendar using greedy optimization heuristic. Returns calendar_events array that you MUST pass directly to save_promotion_calendar in the next step.",
                 "input_schema": {
                     "type": "object",
                     "properties": {
@@ -575,13 +642,13 @@ You MUST complete step 4 - calling save_promotion_calendar is mandatory."""
             },
             {
                 "name": "save_promotion_calendar",
-                "description": "REQUIRED FINAL STEP: Save promotion calendar to JSON file. You MUST call this tool after generating the calendar to complete the task. Do not finish without calling this.",
+                "description": "REQUIRED FINAL STEP: Save promotion calendar to JSON file. You MUST call this tool after generating the calendar to complete the task. IMPORTANT: Pass the exact calendar_events array returned by generate_initial_calendar - do NOT create new events.",
                 "input_schema": {
                     "type": "object",
                     "properties": {
                         "calendar_events": {
                             "type": "array",
-                            "description": "List of promotion events from the calendar you generated"
+                            "description": "EXACT calendar_events array from generate_initial_calendar tool result. Do NOT modify the schema."
                         },
                         "metadata": {
                             "type": "object",
@@ -631,16 +698,20 @@ Step 2: generate_initial_calendar
    - Select optimal PPG-Retailer-Week combinations
    - Choose tactics based on objective
    - Respect all retailer constraints
+   - SAVE the calendar_events array from the response - you'll need it for steps 3 and 4
 
 Step 3: calculate_projected_impact
    Calculate estimated volume/profit for the calendar
+   - Pass the EXACT calendar_events array from step 2
 
 Step 4: save_promotion_calendar (MANDATORY - DO NOT SKIP)
    Save the calendar to file
-   - Pass the calendar_events from step 2
+   - Pass the EXACT calendar_events array from step 2 (do NOT modify or recreate)
    - Pass metadata with total_spend and projections
    - YOU MUST CALL THIS BEFORE FINISHING
 
+CRITICAL: Use the exact calendar_events returned by generate_initial_calendar tool.
+DO NOT create new events with different field names.
 DO NOT regenerate the calendar multiple times.
 DO NOT skip step 4.
 
