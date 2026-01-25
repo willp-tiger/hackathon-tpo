@@ -217,6 +217,14 @@ Assistant: "Before we start, let me check - do we have a specification
 
 ### Session Handoff Protocol (MANDATORY)
 
+**⚠️ CRITICAL RULES**:
+1. **ALL session summaries MUST go in CLAUDE.md at the bottom**
+2. **DO NOT create separate handoff documents** (e.g., NEXT_SESSION_PLAN.md, HANDOFF.md, SESSION_NOTES.md)
+3. **DO NOT create separate "next steps" or "future work" documents**
+4. **CLAUDE.md is the ONLY source of truth for project state**
+
+If you create a separate handoff document, you are violating this protocol.
+
 **When ending a development session, Claude Code assistants MUST update CLAUDE.md with:**
 
 1. **Session Summary Section** (at bottom of CLAUDE.md)
@@ -1501,8 +1509,155 @@ When ending a development session, Claude Code assistants MUST:
 ---
 
 **Last Updated**: 2026-01-25 (End of Session 12)
-**Current Branch**: `dev-integration`  
+**Current Branch**: `dev-integration`
 **Commits**: c6bbdd4 (report generator), 23195ad (docs cleanup), b36bf37 (Session 11)
 **Status**: Journey tracking 80% complete - Implementation done, integration pending
 **Next Session**: Complete orchestrator integration + testing
+
+---
+
+## Session Summary (2026-01-25 - Session 13)
+
+### What Was Completed ✅
+
+**JOURNEY TRACKING SYSTEM COMPLETE WITH DETAILED LOGGING**
+
+1. **Orchestrator Integration - COMPLETE**
+   - Added JourneyTracker initialization to orchestrator
+   - Integrated **19 journey logging calls** across all workflow phases
+   - Journey log writes to `outputs/OPTIMIZATION_JOURNEY.txt` in real-time
+   - Commit: 5684232
+
+2. **Enhanced Detailed Logging - COMPLETE**
+
+   **Agent A (Analyst):**
+   - Baseline velocity, price elasticity, discount lift buckets
+   - Display lift multiplier, seasonality coverage
+   - MAPE accuracy (50.38%)
+   - Logs both cached and freshly generated parameters
+
+   **Agent B (Strategist) - Per Iteration:**
+   - PPGs used in calendar (sorted list)
+   - PPG count and weeks range
+   - Sample events with full details (Week, PPG, Retailer, Discount%)
+   - Event count and total spend
+
+   **Agent C (Auditor) - Per Iteration:**
+   - Top 5 violations with full descriptions
+   - Total violation count
+   - Feedback summary (first 200 chars)
+   - Violation types clearly labeled
+
+3. **Bug Fixes - COMPLETE**
+   - Fixed `total_projected_spend` KeyError in main.py
+   - Fixed violation `type`/`category` field handling (robust fallback)
+   - Made violation formatting handle both old and new formats
+
+4. **Live Monitoring Capability - WORKING**
+   - Real-time journey log updates during execution
+   - Can monitor with: `powershell -Command "Get-Content outputs\OPTIMIZATION_JOURNEY.txt -Wait -Tail 20"`
+   - Event icons: [>] INFO, [+] SUCCESS, [!] WARNING
+   - Timestamps with elapsed time
+
+### Files Modified
+
+| File | Lines Changed | Impact |
+|------|---------------|--------|
+| [src/orchestrator.py](src/orchestrator.py) | +67 lines | Journey integration + detailed logging |
+| [main.py](main.py) | +1 line | Fixed KeyError |
+| [CLAUDE.md](CLAUDE.md) | Updated | Added critical handoff protocol rules |
+
+### Sample Journey Log Output
+
+```
+================================================================================
+STEP 2: AGENT A (ANALYST)
+================================================================================
+[>] [02:19:09 | +0.0s] Using cached causal parameters
+    baseline_velocity: 11,815.46
+    price_elasticity: 6.91
+    discount_buckets: ['0-15', '15-25', '25-35', '35-45', '45+']
+    display_lift: 2.89
+    seasonality_weeks: 52
+
+================================================================================
+STEP 3: REJECTION LOOP (AGENT B <-> AGENT C)
+================================================================================
+[>] [02:19:09 | +0.0s] Iteration 1: Calendar composition
+    ppgs: ['Brand 1_Promo.Group 20', 'Brand 4_Promo.Group 0']
+    ppg_count: 3
+    weeks_range: 7-52
+    sample_events:
+      - Week 12: Brand 1_Promo.Group 20 at Retailer 0 (30% off)
+
+[!] [02:19:09 | +0.0s] Iteration 1: Top violations found
+    violations: ['GAP_RULE: PPG8, Retailer 1: Gap of 3 weeks']
+    total_violations: 10
+```
+
+### Key Learnings 💡
+
+1. **User requirement clarity**
+   - User wanted to see detailed iteration results, not just counts
+   - Enhanced logging shows PPG selection, violations, feedback
+   - Journey log now provides full transparency into agent decisions
+
+2. **DO NOT create separate handoff documents**
+   - User explicitly requested no NEXT_SESSION_PLAN.md files
+   - ALL session info MUST go in CLAUDE.md
+   - Updated Session Handoff Protocol with explicit prohibition
+
+3. **Integration testing validated**
+   - Journey tracking tested with quick Python script
+   - Verified log format before full system integration
+   - Confirmed real-time logging works correctly
+
+### What's Next ⏭️
+
+**Next Session Goal**: Create user-friendly frontend and comprehensive test suite
+
+**Priority Tasks for Session 14**:
+
+1. **User-Friendly Dashboard** (2-3 hours)
+   - Create `src/utils/dashboard_generator.py`
+   - Generate HTML dashboard from journey log
+   - Interactive calendar visualization
+   - Journey timeline with expandable sections
+   - Output: `outputs/journey_dashboard.html`
+
+2. **Comprehensive Test Suite** (2-3 hours)
+   - Create 5 test scenarios:
+     - Volume max (high budget, $1.5M)
+     - Profit max (high budget, $1.5M)
+     - Budget constraint (low budget, $500K)
+     - Rejection loop demo (very low, $100K)
+     - Fresh Agent A analysis (delete cache first)
+   - File: `tests/test_comprehensive_scenarios.py`
+   - Document expected outcomes in CLAUDE.md
+
+3. **Demo Preparation** (1-2 hours)
+   - Create demo script in CLAUDE.md (not separate file!)
+   - Document judging criteria alignment
+   - Create architecture diagram (ASCII art in CLAUDE.md)
+   - Prepare talking points
+
+4. **Final Polish** (1 hour)
+   - Clean up test files and debug output
+   - Update README.md
+   - Verify all deliverables
+   - Run final end-to-end test
+
+**Success Criteria**:
+- Dashboard generates for all test scenarios
+- All 5 test scenarios run successfully
+- Demo walkthrough documented in CLAUDE.md
+- System runs end-to-end without errors
+
+---
+
+**Last Updated**: 2026-01-25 (End of Session 13)
+**Current Branch**: `dev-integration`
+**Commits**: 5684232 (journey tracking complete)
+**Status**: Phase 5 COMPLETE ✅ | Journey Tracking COMPLETE ✅ | Ready for Demo Prep
+**Next Session**: Dashboard + Testing + Demo Materials
 
