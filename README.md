@@ -41,7 +41,8 @@ Trade promotions represent one of the largest discretionary investments for CPG 
 - Self-validate outputs using quality thresholds
 
 **Inputs**:
-- `case-data/Sales.xlsx`
+
+- `case-data/sales_v2.xlsx` (use 'Sales ' sheet with trailing space)
 - `case-data/PromotionData.xlsx`
 
 **Outputs** (saved via tool call):
@@ -243,47 +244,71 @@ python main.py --objective volume --budget 1000000
 python main.py --objective profit --budget 1000000
 ```
 
+## Project Status
+
+**Current Phase**: Agent B (Strategist) Implementation
+**Completed**: ✅ Agent A (Analyst), ✅ Agent C (Auditor)
+**Branch**: `dev-claude-agent-b`
+
+### Implementation Progress
+
+- **Agent A**: Complete (50.38% MAPE, tier-specific display lifts, 52-week seasonality)
+- **Agent C**: Complete (100% constraint validation accuracy, 7 test fixtures)
+- **Agent B**: Specification complete, implementation in progress
+- **Integration**: Pending (Agent A → B → C feedback loop)
+
 ## Project Structure
 
 ```
 hackathon-tpo/
 ├── case-data/              # Input data files
-│   ├── Sales.xlsx
-│   ├── PromotionData.xlsx
-│   ├── Finance.xlsx
-│   ├── Promo_config.csv
-│   └── Constraints.json
+│   ├── sales_v2.xlsx      # Historical sales (PPG level) ⚠️ Use 'Sales ' sheet
+│   ├── PromotionData.xlsx # Promotion tactics and TPR
+│   ├── Finance.xlsx       # Unit economics
+│   ├── Promo_config.csv   # Display fees
+│   └── Constraints.json   # Validation rules (fixed JSON)
 ├── docs/                   # Documentation
+│   ├── specs/             # Agent specifications
+│   │   ├── agent_a_analyst_spec.md
+│   │   ├── agent_b_strategist_spec.md (NEW)
+│   │   └── agent_c_auditor_spec.md
+│   ├── archive/           # Historical session docs
+│   ├── PROMOTION_CALENDAR_RESEARCH.md (NEW)
+│   ├── CONSTRAINT_VALIDATION_RESEARCH.md (NEW)
+│   ├── DATA_SCHEMA.md
 │   └── case-study-instructions.pptx
 ├── src/                    # Source code
 │   ├── agents/            # Agent implementations
-│   │   ├── analyst.py     # Agent A: Causal Inference
-│   │   ├── strategist.py  # Agent B: Optimizer
-│   │   └── auditor.py     # Agent C: Compliance
-│   ├── utils/             # Utility functions
-│   │   ├── data_loader.py
-│   │   ├── metrics.py
-│   │   └── validators.py
-│   └── orchestrator.py    # Main orchestration logic
+│   │   ├── analyst.py     # ✅ Agent A: Complete
+│   │   ├── strategist.py  # 🔄 Agent B: In progress
+│   │   └── auditor.py     # ✅ Agent C: Complete
+│   └── utils/             # Utility functions
+│       └── data_loader.py
 ├── outputs/               # Generated outputs
-│   ├── optimized_calendar.csv
-│   ├── financial_impact_report.json
-│   ├── baseline_validation.csv
-│   └── agent_execution_log.txt
+│   ├── causal_parameters.json
+│   ├── agent_a_execution_log.txt
+│   ├── agent_c_execution_log.txt
+│   └── test_summary.md
 ├── tests/                 # Unit tests
+│   ├── fixtures/          # Test calendars (7 files)
+│   ├── test_agent_a_complete.py
+│   └── test_agent_c_auditor.py
 ├── requirements.txt       # Python dependencies
-├── main.py               # Entry point
+├── main.py               # Entry point (orchestrator TBD)
+├── CLAUDE.md             # Development guide (streamlined)
 └── README.md             # This file
 ```
 
 ## Development Notes
 
 - **ALL AGENTS USE CLAUDE API** - This is mandatory for judging criteria (40% of score)
+- **Model**: `claude-3-7-sonnet-20250219` (latest as of Jan 2025)
 - All agents must be modular and independently testable
 - The rejection loop between Agent B and Agent C is critical for demonstrating agentic behavior
 - Financial calculations must be precise and auditable (tools handle computation, Claude handles reasoning)
 - All decisions must be logged with clear reasoning (Claude's natural language explanations)
 - Visible agent interactions in logs are required for demo and judging
+- **Data Granularity**: All operations at PPG-Retailer-Week level (11 PPGs × 2 Retailers)
 
 ## Architecture Pattern
 
@@ -304,7 +329,7 @@ class AgentX:
 
         while True:
             response = self.client.messages.create(
-                model="claude-3-5-sonnet-20241022",
+                model="claude-3-7-sonnet-20250219",
                 max_tokens=4096,
                 system=self.system_prompt,
                 tools=self.tools,
