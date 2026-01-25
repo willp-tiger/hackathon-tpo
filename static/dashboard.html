@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TPO AI Agents - Interactive Dashboard</title>
+    <title>TPO AI Agents Dashboard</title>
     <style>
         * {
             margin: 0;
@@ -13,164 +13,264 @@
 
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-            background: #F9FAFB;
-            color: #111827;
+            background: #F8FAFC;
+            color: #1E293B;
             line-height: 1.6;
+            min-height: 100vh;
         }
 
-        .dashboard {
-            display: grid;
-            grid-template-columns: 350px 1fr 350px;
-            grid-template-rows: auto 1fr auto;
-            gap: 20px;
-            padding: 20px;
-            height: 100vh;
-        }
-
+        /* Header */
         header {
-            grid-column: 1 / -1;
             background: linear-gradient(135deg, #1E40AF 0%, #3B82F6 100%);
             color: white;
-            padding: 30px;
-            border-radius: 12px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            padding: 2rem;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
         }
 
         header h1 {
-            font-size: 2em;
-            margin-bottom: 5px;
+            font-size: 1.75rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
         }
 
         header p {
-            opacity: 0.9;
+            opacity: 0.95;
+            font-size: 1rem;
         }
 
-        .panel {
+        /* Main Container */
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        /* Card Styling */
+        .card {
             background: white;
-            border-radius: 12px;
-            padding: 25px;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-            overflow-y: auto;
+            border-radius: 16px;
+            padding: 2rem;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            margin-bottom: 2rem;
         }
 
-        .panel h2 {
-            color: #1E40AF;
-            margin-bottom: 20px;
-            padding-bottom: 10px;
-            border-bottom: 3px solid #E5E7EB;
+        .card h2 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #1E293B;
+            margin-bottom: 1.5rem;
+            padding-bottom: 1rem;
+            border-bottom: 2px solid #F1F5F9;
         }
 
-        .config-panel {
-            grid-row: 2;
+        /* Configuration Section */
+        .config-section {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2rem;
+            margin-bottom: 2rem;
         }
 
-        .main-panel {
-            grid-row: 2;
-            display: flex;
-            flex-direction: column;
-        }
-
-        .results-panel {
-            grid-row: 2;
-        }
-
-        .history-panel {
-            grid-column: 1 / -1;
-            max-height: 200px;
-        }
-
-        /* Form Styling */
         .form-group {
-            margin-bottom: 20px;
+            margin-bottom: 2rem;
         }
 
-        label {
+        .form-group label {
             display: block;
             font-weight: 600;
-            color: #374151;
-            margin-bottom: 8px;
+            font-size: 0.95rem;
+            color: #475569;
+            margin-bottom: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.025em;
         }
 
-        select, input[type="range"] {
+        /* Custom Select */
+        select {
             width: 100%;
-            padding: 10px;
-            border: 2px solid #E5E7EB;
-            border-radius: 6px;
-            font-size: 1em;
+            padding: 1rem;
+            font-size: 1.1rem;
+            border: 2px solid #E2E8F0;
+            border-radius: 12px;
+            background: white;
+            color: #1E293B;
+            cursor: pointer;
+            transition: all 0.2s;
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23475569' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 1rem center;
+            padding-right: 3rem;
+        }
+
+        select:hover {
+            border-color: #CBD5E1;
         }
 
         select:focus {
             outline: none;
             border-color: #3B82F6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
         }
 
-        input[type="range"] {
-            padding: 0;
+        /* Budget Slider */
+        .slider-container {
+            padding: 1rem 0;
         }
 
         .slider-value {
-            font-size: 1.5em;
-            font-weight: bold;
+            font-size: 2rem;
+            font-weight: 700;
             color: #1E40AF;
-            margin-top: 5px;
+            margin-bottom: 1rem;
+            text-align: center;
         }
 
-        button {
+        input[type="range"] {
             width: 100%;
-            padding: 15px;
-            background: linear-gradient(135deg, #1E40AF 0%, #3B82F6 100%);
-            color: white;
-            border: none;
+            height: 8px;
             border-radius: 8px;
-            font-size: 1.1em;
-            font-weight: 600;
+            background: #E2E8F0;
+            outline: none;
+            -webkit-appearance: none;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #1E40AF 0%, #3B82F6 100%);
             cursor: pointer;
+            box-shadow: 0 2px 8px rgba(30, 64, 175, 0.3);
             transition: transform 0.2s;
         }
 
-        button:hover {
-            transform: translateY(-2px);
+        input[type="range"]::-webkit-slider-thumb:hover {
+            transform: scale(1.15);
         }
 
-        button:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-            transform: none;
+        input[type="range"]::-moz-range-thumb {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #1E40AF 0%, #3B82F6 100%);
+            cursor: pointer;
+            border: none;
+            box-shadow: 0 2px 8px rgba(30, 64, 175, 0.3);
         }
 
-        /* Progress Bar */
-        .progress-container {
-            margin-bottom: 20px;
+        .slider-labels {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 0.5rem;
+            font-size: 0.875rem;
+            color: #64748B;
         }
 
-        .progress-bar {
+        /* Buttons */
+        .btn {
+            padding: 1.25rem 2rem;
+            font-size: 1.125rem;
+            font-weight: 600;
+            border: none;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-align: center;
+            display: block;
             width: 100%;
-            height: 30px;
-            background: #E5E7EB;
-            border-radius: 15px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #1E40AF 0%, #3B82F6 100%);
+            color: white;
+            box-shadow: 0 4px 12px rgba(30, 64, 175, 0.3);
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(30, 64, 175, 0.4);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .btn-secondary {
+            background: #F1F5F9;
+            color: #475569;
+            margin-top: 0.75rem;
+        }
+
+        .btn-secondary:hover {
+            background: #E2E8F0;
+        }
+
+        .preset-buttons {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+            margin-top: 1.5rem;
+        }
+
+        .btn-preset {
+            padding: 1rem;
+            font-size: 1rem;
+            border-radius: 10px;
+        }
+
+        .btn-conservative {
+            background: linear-gradient(135deg, #059669 0%, #10B981 100%);
+            color: white;
+        }
+
+        .btn-aggressive {
+            background: linear-gradient(135deg, #DC2626 0%, #EF4444 100%);
+            color: white;
+        }
+
+        /* Progress Section */
+        .progress-section {
+            margin-bottom: 2rem;
+        }
+
+        .progress-bar-container {
+            background: #F1F5F9;
+            height: 48px;
+            border-radius: 12px;
             overflow: hidden;
             position: relative;
+            margin-bottom: 1rem;
         }
 
-        .progress-fill {
+        .progress-bar-fill {
             height: 100%;
             background: linear-gradient(90deg, #059669 0%, #10B981 100%);
             width: 0%;
-            transition: width 0.3s;
+            transition: width 0.5s ease;
             display: flex;
             align-items: center;
             justify-content: center;
             color: white;
-            font-weight: 600;
+            font-weight: 700;
+            font-size: 1.125rem;
         }
 
-        .status-text {
-            margin-top: 10px;
-            padding: 12px;
-            background: #F3F4F6;
-            border-radius: 6px;
-            text-align: center;
-            font-weight: 500;
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 0.75rem 1.5rem;
+            border-radius: 10px;
+            font-weight: 600;
+            font-size: 1rem;
+        }
+
+        .status-ready {
+            background: #F1F5F9;
+            color: #64748B;
         }
 
         .status-running {
@@ -189,184 +289,312 @@
         }
 
         /* Journey Log */
-        .journey-log {
-            flex: 1;
-            background: #1F2937;
-            color: #F9FAFB;
-            padding: 15px;
-            border-radius: 8px;
-            font-family: 'Courier New', monospace;
-            font-size: 0.9em;
+        .journey-log-container {
+            background: #1E293B;
+            border-radius: 12px;
+            padding: 1.5rem;
+            height: 500px;
             overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+            color: #F1F5F9;
+            line-height: 1.6;
             white-space: pre-wrap;
-            margin-top: 10px;
         }
 
-        /* Metrics Cards */
-        .metrics-grid {
+        .journey-log-container::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .journey-log-container::-webkit-scrollbar-track {
+            background: #0F172A;
+            border-radius: 4px;
+        }
+
+        .journey-log-container::-webkit-scrollbar-thumb {
+            background: #475569;
+            border-radius: 4px;
+        }
+
+        /* Results Grid */
+        .results-grid {
             display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 15px;
-            margin-bottom: 20px;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
         }
 
         .metric-card {
-            background: linear-gradient(135deg, #F3F4F6 0%, #E5E7EB 100%);
-            padding: 20px;
-            border-radius: 8px;
-            border-left: 4px solid #1E40AF;
+            background: linear-gradient(135deg, #F8FAFC 0%, #F1F5F9 100%);
+            padding: 1.5rem;
+            border-radius: 12px;
+            border-left: 4px solid #3B82F6;
+            text-align: center;
         }
 
         .metric-label {
-            font-size: 0.85em;
-            color: #6B7280;
+            font-size: 0.875rem;
+            color: #64748B;
             text-transform: uppercase;
-            margin-bottom: 5px;
+            letter-spacing: 0.05em;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
         }
 
         .metric-value {
-            font-size: 1.8em;
-            font-weight: bold;
+            font-size: 2rem;
+            font-weight: 700;
             color: #1E40AF;
+            line-height: 1;
         }
 
         /* Calendar Table */
+        .table-container {
+            overflow-x: auto;
+            border-radius: 12px;
+            border: 1px solid #E2E8F0;
+        }
+
         table {
             width: 100%;
             border-collapse: collapse;
-            font-size: 0.9em;
         }
 
         thead {
-            background: #F3F4F6;
+            background: #F8FAFC;
         }
 
         th {
-            padding: 10px;
+            padding: 1rem;
             text-align: left;
             font-weight: 600;
-            border-bottom: 2px solid #E5E7EB;
+            font-size: 0.875rem;
+            color: #475569;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            border-bottom: 2px solid #E2E8F0;
         }
 
         td {
-            padding: 10px;
-            border-bottom: 1px solid #F3F4F6;
+            padding: 1rem;
+            border-bottom: 1px solid #F1F5F9;
+            font-size: 0.95rem;
         }
 
         tbody tr:hover {
-            background: #F9FAFB;
+            background: #F8FAFC;
         }
 
         /* Run History */
+        .run-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+
         .run-item {
-            padding: 12px;
-            background: #F9FAFB;
-            border-radius: 6px;
-            margin-bottom: 10px;
+            padding: 1.25rem;
+            background: #F8FAFC;
+            border-radius: 10px;
+            border-left: 4px solid #E2E8F0;
             cursor: pointer;
-            border-left: 4px solid #E5E7EB;
-            transition: border-color 0.2s;
+            transition: all 0.2s;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
 
         .run-item:hover {
+            background: #F1F5F9;
             border-left-color: #3B82F6;
+            transform: translateX(4px);
         }
 
         .run-item.active {
-            border-left-color: #1E40AF;
             background: #EFF6FF;
+            border-left-color: #1E40AF;
         }
 
-        @media (max-width: 1400px) {
-            .dashboard {
+        .run-info {
+            flex: 1;
+        }
+
+        .run-id {
+            font-weight: 700;
+            color: #1E293B;
+            margin-bottom: 0.25rem;
+        }
+
+        .run-params {
+            font-size: 0.875rem;
+            color: #64748B;
+        }
+
+        .run-status {
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 0.875rem;
+        }
+
+        .run-status.completed {
+            background: #D1FAE5;
+            color: #065F46;
+        }
+
+        .run-status.running {
+            background: #DBEAFE;
+            color: #1E40AF;
+        }
+
+        .run-status.failed {
+            background: #FEE2E2;
+            color: #991B1B;
+        }
+
+        /* Empty States */
+        .empty-state {
+            text-align: center;
+            padding: 3rem 1rem;
+            color: #94A3B8;
+        }
+
+        .empty-state svg {
+            width: 64px;
+            height: 64px;
+            margin-bottom: 1rem;
+            opacity: 0.5;
+        }
+
+        /* Responsive */
+        @media (max-width: 968px) {
+            .config-section {
                 grid-template-columns: 1fr;
-                grid-template-rows: auto auto auto auto;
             }
 
-            .config-panel,
-            .main-panel,
-            .results-panel,
-            .history-panel {
-                grid-column: 1;
-                grid-row: auto;
+            .preset-buttons {
+                grid-template-columns: 1fr;
+            }
+
+            .results-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        @media (max-width: 640px) {
+            .container {
+                padding: 1rem;
+            }
+
+            .card {
+                padding: 1.25rem;
+            }
+
+            .results-grid {
+                grid-template-columns: 1fr;
             }
         }
     </style>
 </head>
 <body>
-    <div class="dashboard">
-        <header>
-            <h1>TPO AI Agents - Interactive Dashboard</h1>
-            <p>Configure and run promotional calendar optimizations with AI agents</p>
-        </header>
+    <header>
+        <h1>🤖 TPO AI Agents Dashboard</h1>
+        <p>Configure and run promotional calendar optimizations with intelligent agents</p>
+    </header>
 
-        <!-- Configuration Panel -->
-        <div class="panel config-panel">
-            <h2>Configuration</h2>
+    <div class="container">
+        <!-- Configuration Card -->
+        <div class="card">
+            <h2>⚙️ Configuration</h2>
             <form id="config-form">
-                <div class="form-group">
-                    <label for="objective">Optimization Objective:</label>
-                    <select id="objective" name="objective">
-                        <option value="volume">Maximize Unit Volume</option>
-                        <option value="profit">Maximize Profit</option>
-                    </select>
+                <div class="config-section">
+                    <div class="form-group">
+                        <label for="objective">Optimization Objective</label>
+                        <select id="objective" name="objective">
+                            <option value="volume">📈 Maximize Unit Volume</option>
+                            <option value="profit">💰 Maximize Profit</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="budget">Budget Allocation</label>
+                        <div class="slider-container">
+                            <div class="slider-value" id="budget-value">$1,000,000</div>
+                            <input type="range" id="budget" name="budget"
+                                   min="100000" max="2000000" step="50000" value="1000000">
+                            <div class="slider-labels">
+                                <span>$100K</span>
+                                <span>$2M</span>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
-                <div class="form-group">
-                    <label for="budget">Budget:</label>
-                    <input type="range" id="budget" name="budget"
-                           min="100000" max="2000000" step="50000" value="1000000">
-                    <div class="slider-value" id="budget-value">$1,000,000</div>
-                </div>
+                <button type="submit" id="run-button" class="btn btn-primary">
+                    🚀 Run Optimization
+                </button>
 
-                <button type="submit" id="run-button">Run Optimization</button>
+                <div class="preset-buttons">
+                    <button type="button" onclick="setPreset('conservative')" class="btn btn-preset btn-conservative">
+                        🎯 Conservative ($500K)
+                    </button>
+                    <button type="button" onclick="setPreset('aggressive')" class="btn btn-preset btn-aggressive">
+                        ⚡ Aggressive ($2M)
+                    </button>
+                </div>
             </form>
+        </div>
 
-            <div style="margin-top: 30px;">
-                <h3 style="font-size: 0.9em; color: #6B7280; margin-bottom: 10px;">Quick Presets:</h3>
-                <button onclick="setPreset('conservative')" style="margin-bottom: 10px; background: #6B7280;">
-                    Conservative ($500K)
-                </button>
-                <button onclick="setPreset('aggressive')" style="background: #DC2626;">
-                    Aggressive ($2M)
-                </button>
+        <!-- Progress Card -->
+        <div class="card progress-section">
+            <h2>📊 Execution Progress</h2>
+            <div class="progress-bar-container">
+                <div class="progress-bar-fill" id="progress-fill">0%</div>
+            </div>
+            <div style="text-align: center;">
+                <span class="status-badge status-ready" id="status-badge">Ready to run</span>
             </div>
         </div>
 
-        <!-- Main Panel (Progress + Journey Log) -->
-        <div class="panel main-panel">
-            <h2>Execution Monitor</h2>
+        <!-- Journey Log Card -->
+        <div class="card">
+            <h2>📝 Live Journey Log</h2>
+            <div class="journey-log-container" id="journey-log">Waiting for optimization to start...
 
-            <div class="progress-container">
-                <div class="progress-bar">
-                    <div class="progress-fill" id="progress-fill">0%</div>
-                </div>
-                <div class="status-text" id="status-text">Ready to run</div>
-            </div>
+Configure your parameters above and click "Run Optimization" to begin.
 
-            <div class="journey-log" id="journey-log">
-Waiting for optimization to start...
-
-Configure your parameters and click "Run Optimization" to begin.
+The journey log will show real-time updates as agents work:
+• Agent A (Analyst) - Analyzes data and generates causal parameters
+• Agent B (Strategist) - Generates promotional calendar
+• Agent C (Auditor) - Validates constraints
+• Rejection Loop - Shows iterative refinement
             </div>
         </div>
 
-        <!-- Results Panel -->
-        <div class="panel results-panel">
-            <h2>Results</h2>
-
+        <!-- Results Card -->
+        <div class="card">
+            <h2>📈 Results</h2>
             <div id="results-content">
-                <p style="color: #6B7280; text-align: center; padding: 40px 0;">
-                    No results yet.<br>Run an optimization to see results here.
-                </p>
+                <div class="empty-state">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+                    </svg>
+                    <p><strong>No results yet</strong></p>
+                    <p>Run an optimization to see results here</p>
+                </div>
             </div>
         </div>
 
-        <!-- Run History Panel -->
-        <div class="panel history-panel">
-            <h2>Run History</h2>
-            <div id="run-history">
-                <p style="color: #6B7280;">No runs yet. Start your first optimization above.</p>
+        <!-- Run History Card -->
+        <div class="card">
+            <h2>🕐 Run History</h2>
+            <div id="run-history" class="run-list">
+                <div class="empty-state">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                    <p>No runs yet. Start your first optimization above.</p>
+                </div>
             </div>
         </div>
     </div>
@@ -396,7 +624,6 @@ Configure your parameters and click "Run Optimization" to begin.
                 objective.value = 'volume';
             }
 
-            // Update display
             document.getElementById('budget-value').textContent =
                 '$' + parseInt(budgetSlider.value).toLocaleString();
         }
@@ -410,10 +637,9 @@ Configure your parameters and click "Run Optimization" to begin.
                 budget: parseInt(document.getElementById('budget').value)
             };
 
-            // Disable button
             const runButton = document.getElementById('run-button');
             runButton.disabled = true;
-            runButton.textContent = 'Starting...';
+            runButton.textContent = '⏳ Starting...';
 
             try {
                 const response = await fetch('/api/run', {
@@ -426,7 +652,7 @@ Configure your parameters and click "Run Optimization" to begin.
 
                 if (data.run_id) {
                     currentRunId = data.run_id;
-                    updateStatus('running', 'Optimization started...');
+                    updateStatus('running', 'Optimization in progress...');
                     startPolling();
                     loadRunHistory();
                 } else {
@@ -436,18 +662,14 @@ Configure your parameters and click "Run Optimization" to begin.
             } catch (error) {
                 updateStatus('failed', 'Error: ' + error.message);
                 runButton.disabled = false;
-                runButton.textContent = 'Run Optimization';
+                runButton.textContent = '🚀 Run Optimization';
             }
         });
 
-        // Polling for updates
+        // Polling
         function startPolling() {
-            // Clear any existing interval
-            if (pollingInterval) {
-                clearInterval(pollingInterval);
-            }
+            if (pollingInterval) clearInterval(pollingInterval);
 
-            // Poll every 2 seconds
             pollingInterval = setInterval(async () => {
                 await updateJourneyLog();
                 await checkStatus();
@@ -462,7 +684,7 @@ Configure your parameters and click "Run Optimization" to begin.
 
             const runButton = document.getElementById('run-button');
             runButton.disabled = false;
-            runButton.textContent = 'Run Optimization';
+            runButton.textContent = '🚀 Run Optimization';
         }
 
         // Update journey log
@@ -475,8 +697,6 @@ Configure your parameters and click "Run Optimization" to begin.
 
                 const journeyLog = document.getElementById('journey-log');
                 journeyLog.textContent = data.journey || 'No log data yet...';
-
-                // Auto-scroll to bottom
                 journeyLog.scrollTop = journeyLog.scrollHeight;
 
             } catch (error) {
@@ -484,7 +704,7 @@ Configure your parameters and click "Run Optimization" to begin.
             }
         }
 
-        // Check run status
+        // Check status
         async function checkStatus() {
             if (!currentRunId) return;
 
@@ -493,15 +713,16 @@ Configure your parameters and click "Run Optimization" to begin.
                 const data = await response.json();
 
                 if (data.status === 'completed') {
-                    updateStatus('completed', 'Optimization completed successfully!');
+                    updateStatus('completed', 'Optimization completed successfully! ✓');
                     updateProgress(100);
                     stopPolling();
                     loadResults();
+                    loadRunHistory();
                 } else if (data.status === 'failed') {
                     updateStatus('failed', 'Optimization failed: ' + (data.error || 'Unknown error'));
                     stopPolling();
+                    loadRunHistory();
                 } else if (data.status === 'running') {
-                    // Estimate progress from journey log
                     estimateProgress();
                 }
 
@@ -510,7 +731,7 @@ Configure your parameters and click "Run Optimization" to begin.
             }
         }
 
-        // Estimate progress from journey log content
+        // Estimate progress
         function estimateProgress() {
             const journeyText = document.getElementById('journey-log').textContent;
             let progress = 0;
@@ -526,14 +747,14 @@ Configure your parameters and click "Run Optimization" to begin.
             updateProgress(progress);
         }
 
-        // Update status text
+        // Update status
         function updateStatus(type, message) {
-            const statusText = document.getElementById('status-text');
-            statusText.textContent = message;
-            statusText.className = 'status-text status-' + type;
+            const badge = document.getElementById('status-badge');
+            badge.textContent = message;
+            badge.className = 'status-badge status-' + type;
         }
 
-        // Update progress bar
+        // Update progress
         function updateProgress(percent) {
             const progressFill = document.getElementById('progress-fill');
             progressFill.style.width = percent + '%';
@@ -547,9 +768,7 @@ Configure your parameters and click "Run Optimization" to begin.
             try {
                 const response = await fetch(`/api/results/${currentRunId}`);
                 const data = await response.json();
-
                 displayResults(data);
-
             } catch (error) {
                 console.error('Error loading results:', error);
             }
@@ -560,7 +779,7 @@ Configure your parameters and click "Run Optimization" to begin.
             const resultsContent = document.getElementById('results-content');
 
             if (!data.calendar && !data.metrics) {
-                resultsContent.innerHTML = '<p style="color: #DC2626;">Results not available</p>';
+                resultsContent.innerHTML = '<div class="empty-state"><p>Results not available</p></div>';
                 return;
             }
 
@@ -568,7 +787,7 @@ Configure your parameters and click "Run Optimization" to begin.
 
             // Metrics
             if (data.metrics) {
-                html += '<div class="metrics-grid">';
+                html += '<div class="results-grid">';
 
                 if (data.metrics.total_events !== undefined) {
                     html += `
@@ -583,7 +802,7 @@ Configure your parameters and click "Run Optimization" to begin.
                     html += `
                         <div class="metric-card">
                             <div class="metric-label">Total Spend</div>
-                            <div class="metric-value">$${data.metrics.total_spend.toLocaleString()}</div>
+                            <div class="metric-value">$${(data.metrics.total_spend / 1000).toFixed(0)}K</div>
                         </div>
                     `;
                 }
@@ -609,20 +828,20 @@ Configure your parameters and click "Run Optimization" to begin.
                 html += '</div>';
             }
 
-            // Calendar preview
+            // Calendar
             if (data.calendar && data.calendar.calendar_events) {
                 const events = data.calendar.calendar_events.slice(0, 10);
-                html += '<h3 style="margin: 20px 0 10px 0; color: #374151;">Calendar Preview (first 10 events)</h3>';
-                html += '<div style="overflow-x: auto;"><table><thead><tr>';
+                html += '<h3 style="margin: 1.5rem 0 1rem 0; color: #1E293B;">Calendar Preview (first 10 events)</h3>';
+                html += '<div class="table-container"><table><thead><tr>';
                 html += '<th>Week</th><th>PPG</th><th>Retailer</th><th>Discount</th>';
                 html += '</tr></thead><tbody>';
 
                 events.forEach(event => {
                     html += '<tr>';
-                    html += `<td>${event.week || 'N/A'}</td>`;
-                    html += `<td>${(event.ppg || 'N/A').substring(0, 15)}...</td>`;
-                    html += `<td>${event.retailer !== undefined ? event.retailer : 'N/A'}</td>`;
-                    html += `<td>${event.discount_depth ? (event.discount_depth * 100).toFixed(0) + '%' : 'N/A'}</td>`;
+                    html += `<td><strong>${event.week || 'N/A'}</strong></td>`;
+                    html += `<td>${(event.ppg || 'N/A').substring(0, 20)}...</td>`;
+                    html += `<td>Retailer ${event.retailer !== undefined ? event.retailer : 'N/A'}</td>`;
+                    html += `<td><strong>${event.discount_depth ? (event.discount_depth * 100).toFixed(0) + '%' : 'N/A'}</strong></td>`;
                     html += '</tr>';
                 });
 
@@ -641,22 +860,22 @@ Configure your parameters and click "Run Optimization" to begin.
                 const historyContainer = document.getElementById('run-history');
 
                 if (!data.runs || data.runs.length === 0) {
-                    historyContainer.innerHTML = '<p style="color: #6B7280;">No runs yet.</p>';
+                    historyContainer.innerHTML = '<div class="empty-state"><p>No runs yet.</p></div>';
                     return;
                 }
 
                 let html = '';
                 data.runs.forEach(run => {
                     const isActive = run.run_id === currentRunId;
-                    const statusClass = isActive ? 'active' : '';
+                    const statusClass = run.status;
 
                     html += `
-                        <div class="run-item ${statusClass}" onclick="loadRun('${run.run_id}')">
-                            <strong>Run ${run.run_id}</strong> -
-                            ${run.params.objective} @ $${run.params.budget.toLocaleString()} -
-                            <span style="color: ${run.status === 'completed' ? '#059669' : run.status === 'failed' ? '#DC2626' : '#3B82F6'}">
-                                ${run.status}
-                            </span>
+                        <div class="run-item ${isActive ? 'active' : ''}" onclick="loadRun('${run.run_id}')">
+                            <div class="run-info">
+                                <div class="run-id">Run ${run.run_id}</div>
+                                <div class="run-params">${run.params.objective} @ $${(run.params.budget / 1000).toFixed(0)}K</div>
+                            </div>
+                            <div class="run-status ${statusClass}">${run.status}</div>
                         </div>
                     `;
                 });
@@ -674,7 +893,7 @@ Configure your parameters and click "Run Optimization" to begin.
             await updateJourneyLog();
             await checkStatus();
             await loadResults();
-            await loadRunHistory(); // Refresh to update active state
+            await loadRunHistory();
         }
 
         // Initial load
