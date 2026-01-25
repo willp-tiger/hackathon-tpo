@@ -36,7 +36,8 @@ class StrategistAgent:
         budget_limit: float,
         max_iterations: int = 10,
         output_dir: str = "outputs",
-        data_dir: str = "case-data"
+        data_dir: str = "case-data",
+        reasoning_callback=None
     ):
         """
         Initialize the Strategist Agent.
@@ -48,6 +49,7 @@ class StrategistAgent:
             max_iterations: Maximum rejection loop iterations (default: 10)
             output_dir: Directory for output files (default: "outputs")
             data_dir: Directory containing input data files (default: "case-data")
+            reasoning_callback: Optional callback function(reasoning_text) to log agent reasoning
         """
         self.client = Anthropic(api_key=api_key)
         self.objective = objective.lower()
@@ -55,6 +57,7 @@ class StrategistAgent:
         self.max_iterations = max_iterations
         self.output_dir = output_dir
         self.data_dir = data_dir
+        self.reasoning_callback = reasoning_callback
 
         # Validate objective
         if self.objective not in ['volume', 'profit']:
@@ -223,6 +226,11 @@ You MUST complete step 4 - calling save_promotion_calendar is mandatory."""
 
             # Log the response
             self._log_interaction(messages[-1], response)
+
+            # Extract and log Claude's reasoning (text before tool use)
+            reasoning_text = self._extract_reasoning(response.content)
+            if reasoning_text and self.reasoning_callback:
+                self.reasoning_callback(f"Agent B: {reasoning_text}")
 
             # Process response
             if response.stop_reason == "tool_use":
@@ -850,6 +858,14 @@ Execute systematically. Use your tools. Generate an excellent calendar."""
             formatted.append(f"{i}. {v.get('type', 'Unknown')}: {v.get('details', 'No details')}")
 
         return "\n".join(formatted)
+
+    def _extract_reasoning(self, content: List[Any]) -> str:
+        """Extract Claude's reasoning text from response content blocks."""
+        reasoning_parts = []
+        for block in content:
+            if hasattr(block, 'text') and block.text:
+                reasoning_parts.append(block.text)
+        return " ".join(reasoning_parts).strip() if reasoning_parts else ""
 
     def _log_interaction(self, user_message: Dict, response: Any):
         """Log conversation interaction."""

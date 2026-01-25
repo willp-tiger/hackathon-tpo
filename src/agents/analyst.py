@@ -35,7 +35,7 @@ class AnalystAgent:
     5. Save final causal parameters
     """
 
-    def __init__(self, data_dir: str = "case-data", output_dir: str = "outputs", journey_tracker=None):
+    def __init__(self, data_dir: str = "case-data", output_dir: str = "outputs", journey_tracker=None, reasoning_callback=None):
         """
         Initialize the Analyst Agent.
 
@@ -43,11 +43,13 @@ class AnalystAgent:
             data_dir: Directory containing input data files
             output_dir: Directory for output files
             journey_tracker: Optional journey tracker for logging tool execution
+            reasoning_callback: Optional callback function(reasoning_text) to log agent reasoning
         """
         self.data_dir = Path(data_dir)
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.journey = journey_tracker
+        self.reasoning_callback = reasoning_callback
 
         # Initialize Anthropic client
         api_key = os.getenv("ANTHROPIC_API_KEY")
@@ -1390,10 +1392,17 @@ When ready, call save_causal_parameters with complete JSON:
 
                 self._log(f"Claude stop reason: {response.stop_reason}")
 
-                # Log Claude's text response
+                # Log Claude's text response and send to callback
+                reasoning_parts = []
                 for block in response.content:
                     if block.type == "text":
                         self._log(f"Claude: {block.text}")
+                        reasoning_parts.append(block.text)
+
+                # Send reasoning to orchestrator via callback
+                if reasoning_parts and self.reasoning_callback:
+                    reasoning_text = " ".join(reasoning_parts).strip()
+                    self.reasoning_callback(f"Agent A: {reasoning_text}")
 
                 # Process tool calls
                 if response.stop_reason == "tool_use":

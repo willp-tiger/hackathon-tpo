@@ -64,6 +64,16 @@ class TPOOrchestrator:
         # Execution log
         self.execution_log = []
 
+    def _log_agent_reasoning(self, reasoning_text: str):
+        """
+        Callback for agents to log their reasoning to the journey tracker.
+
+        Args:
+            reasoning_text: Reasoning from agent (prefixed with "Agent X: ...")
+        """
+        if self.journey:
+            self.journey.log_agent_reasoning(reasoning_text)
+
     def run(self, objective: str = "volume", budget: float = 1_000_000) -> Dict[str, Any]:
         """
         Execute the full TPO workflow.
@@ -209,7 +219,8 @@ class TPOOrchestrator:
             self.analyst = AnalystAgent(
                 data_dir=self.data_dir,
                 output_dir=str(self.output_dir),
-                journey_tracker=self.journey
+                journey_tracker=self.journey,
+                reasoning_callback=self._log_agent_reasoning
             )
 
             # Agent A will load data and analyze via its tools
@@ -262,7 +273,8 @@ class TPOOrchestrator:
             budget_limit=budget,
             max_iterations=self.max_iterations,
             output_dir=str(self.output_dir),
-            data_dir=self.data_dir
+            data_dir=self.data_dir,
+            reasoning_callback=self._log_agent_reasoning
         )
 
         self._log_event("strategist_initialized", {"objective": objective})
@@ -272,7 +284,8 @@ class TPOOrchestrator:
         # AuditorAgent gets API key from environment and uses data_dir
         self.auditor = AuditorAgent(
             data_dir=self.data_dir,
-            output_dir=str(self.output_dir)
+            output_dir=str(self.output_dir),
+            reasoning_callback=self._log_agent_reasoning
         )
 
         self._log_event("auditor_initialized", {})

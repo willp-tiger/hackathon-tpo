@@ -367,6 +367,49 @@ class JourneyTracker:
             status="SUCCESS"
         )
 
+    def log_agent_reasoning(self, reasoning_text: str):
+        """
+        Log agent reasoning (Claude's thought process).
+
+        This captures the natural language explanations Claude provides
+        during its decision-making process.
+
+        Args:
+            reasoning_text: The reasoning text from Claude (prefixed with agent name)
+        """
+        # Extract agent name and reasoning
+        if reasoning_text.startswith("Agent A:"):
+            phase = "STEP 2: AGENT A (ANALYST)"
+            agent = "Agent A"
+            reasoning = reasoning_text[9:].strip()  # Remove "Agent A: "
+        elif reasoning_text.startswith("Agent B:"):
+            phase = "STEP 3: REJECTION LOOP (AGENT B <-> AGENT C)"
+            agent = "Agent B"
+            reasoning = reasoning_text[9:].strip()
+        elif reasoning_text.startswith("Agent C:"):
+            phase = "STEP 3: REJECTION LOOP (AGENT B <-> AGENT C)"
+            agent = "Agent C"
+            reasoning = reasoning_text[9:].strip()
+        else:
+            phase = "UNKNOWN"
+            agent = "Unknown"
+            reasoning = reasoning_text
+
+        # Truncate very long reasoning for readability
+        max_length = 500
+        if len(reasoning) > max_length:
+            reasoning_display = reasoning[:max_length] + "..."
+        else:
+            reasoning_display = reasoning
+
+        self.log_event(
+            phase=phase,
+            event_type="AGENT_REASONING",
+            description=f"{agent} reasoning: {reasoning_display}",
+            details={"agent": agent, "reasoning_full": reasoning},
+            status="INFO"
+        )
+
     def finalize(self, final_status: str):
         """Finalize the journey log."""
         journey_end = datetime.now()

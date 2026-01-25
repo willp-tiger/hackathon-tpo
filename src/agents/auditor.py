@@ -32,17 +32,19 @@ class AuditorAgent:
     5. Generate actionable feedback and save audit report
     """
 
-    def __init__(self, data_dir: str = "case-data", output_dir: str = "outputs"):
+    def __init__(self, data_dir: str = "case-data", output_dir: str = "outputs", reasoning_callback=None):
         """
         Initialize the Auditor Agent.
 
         Args:
             data_dir: Directory containing input data files
             output_dir: Directory for output files
+            reasoning_callback: Optional callback function(reasoning_text) to log agent reasoning
         """
         self.data_dir = Path(data_dir)
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.reasoning_callback = reasoning_callback
 
         # Initialize Anthropic client
         api_key = os.getenv("ANTHROPIC_API_KEY")
@@ -656,10 +658,17 @@ IMPORTANT: Execute ALL 4 validation tools before making final decision. Do not s
                 messages=messages
             )
 
-            # Log Claude's response
+            # Log Claude's response and send to callback
+            reasoning_parts = []
             for block in response.content:
                 if hasattr(block, 'text'):
                     self._log(f"Claude: {block.text}")
+                    reasoning_parts.append(block.text)
+
+            # Send reasoning to orchestrator via callback
+            if reasoning_parts and self.reasoning_callback:
+                reasoning_text = " ".join(reasoning_parts).strip()
+                self.reasoning_callback(f"Agent C: {reasoning_text}")
 
             # Process response
             if response.stop_reason == "tool_use":
