@@ -208,7 +208,8 @@ class TPOOrchestrator:
             # Initialize Agent A (it gets API key from environment internally)
             self.analyst = AnalystAgent(
                 data_dir=self.data_dir,
-                output_dir=str(self.output_dir)
+                output_dir=str(self.output_dir),
+                journey_tracker=self.journey
             )
 
             # Agent A will load data and analyze via its tools
