@@ -266,8 +266,8 @@ def run_optimization_worker(run_id: str, objective: str, budget: int, run_dir: s
             max_iterations=10
         )
 
-        # Run optimization
-        result = orchestrator.run_optimization(
+        # Run optimization (method is called 'run', not 'run_optimization')
+        result = orchestrator.run(
             objective=objective,
             budget=budget
         )
