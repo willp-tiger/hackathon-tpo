@@ -15,6 +15,7 @@ from loguru import logger
 from .agents import AnalystAgent, StrategistAgent, AuditorAgent
 from .utils import DataLoader, validate_calendar_format
 from .utils.report_generator import ExecutionReportGenerator, generate_quick_summary
+from .utils.journey_tracker import JourneyTracker
 
 
 class TPOOrchestrator:
@@ -51,6 +52,9 @@ class TPOOrchestrator:
 
         # Initialize data loader
         self.data_loader = DataLoader(data_dir)
+
+        # Initialize journey tracker
+        self.journey = JourneyTracker(output_dir=str(self.output_dir))
 
         # Agents (initialized later)
         self.analyst = None
@@ -120,6 +124,13 @@ class TPOOrchestrator:
             start_time=self.start_time,
             end_time=end_time
         )
+        self.journey.log_report_saved(
+            filename="EXECUTION_SUMMARY.txt",
+            description="Comprehensive execution summary for presentation"
+        )
+
+        # Finalize journey log
+        self.journey.finalize(final_status=audit_report['status'])
 
         logger.info("\n" + "=" * 80)
         logger.info("TPO Optimization Complete!")
@@ -136,6 +147,7 @@ class TPOOrchestrator:
     def _load_data(self) -> Dict[str, Any]:
         """Load all required data files."""
         self._log_event("data_loading_start", {})
+        self.journey.log_data_loading_start()
 
         data = self.data_loader.load_all()
 
@@ -144,20 +156,54 @@ class TPOOrchestrator:
             "promotion_rows": len(data["promotions"]),
             "financial_rows": len(data["financials"])
         })
+        self.journey.log_data_loading_complete(
+            sales_rows=len(data["sales"]),
+            promo_rows=len(data["promotions"])
+        )
 
         return data
 
     def _run_analyst(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Run the Analyst agent."""
         self._log_event("analyst_start", {})
+        self.journey.log_agent_a_start()
 
         # Check if causal parameters already exist
         causal_params_path = self.output_dir / "causal_parameters.json"
         if causal_params_path.exists():
             logger.info("Causal parameters already exist, loading from file...")
+            self.journey.log_event(
+                phase="STEP 2: AGENT A (ANALYST)",
+                event_type="CACHED",
+                description="Loading existing causal parameters from cache",
+                details={"file": "outputs/causal_parameters.json"},
+                status="INFO"
+            )
             with open(causal_params_path, 'r') as f:
                 causal_parameters = json.load(f)
             logger.info("Loaded existing causal parameters")
+
+            # Log completion with cached data
+            self.journey.log_agent_a_complete(
+                mape=causal_parameters.get("baseline_mape", 0),
+                method=causal_parameters.get("baseline_method", "cached"),
+                iterations=0
+            )
+
+            # Log cached parameters details
+            self.journey.log_event(
+                phase="STEP 2: AGENT A (ANALYST)",
+                event_type="CACHED_PARAMETERS",
+                description="Using cached causal parameters",
+                details={
+                    "baseline_velocity": causal_parameters.get("baseline_velocity_avg", 0),
+                    "price_elasticity": causal_parameters.get("elasticity_model", {}).get("base_price_elasticity", 0),
+                    "discount_buckets": list(causal_parameters.get("elasticity_model", {}).get("discount_lift_factors", {}).keys()),
+                    "display_lift": causal_parameters.get("elasticity_model", {}).get("display_lift_multiplier", 0),
+                    "seasonality_weeks": len(causal_parameters.get("seasonality_factors", {}))
+                },
+                status="INFO"
+            )
         else:
             # Initialize Agent A with API key
             api_key = os.environ.get("ANTHROPIC_API_KEY")
@@ -168,6 +214,29 @@ class TPOOrchestrator:
 
             # Agent A will load data and analyze via its tools
             causal_parameters = self.analyst.analyze()
+
+            # Log completion with new analysis
+            self.journey.log_agent_a_complete(
+                mape=causal_parameters.get("baseline_mape", 0),
+                method=causal_parameters.get("baseline_method", "unknown"),
+                iterations=causal_parameters.get("total_iterations", 0)
+            )
+
+            # Log detailed Agent A results
+            self.journey.log_event(
+                phase="STEP 2: AGENT A (ANALYST)",
+                event_type="ANALYSIS_RESULTS",
+                description="Causal parameters generated successfully",
+                details={
+                    "baseline_velocity": causal_parameters.get("baseline_velocity_avg", 0),
+                    "price_elasticity": causal_parameters.get("elasticity_model", {}).get("base_price_elasticity", 0),
+                    "discount_lifts": causal_parameters.get("elasticity_model", {}).get("discount_lift_factors", {}),
+                    "display_lift": causal_parameters.get("elasticity_model", {}).get("display_lift_multiplier", 0),
+                    "seasonality_weeks": len(causal_parameters.get("seasonality_factors", {})),
+                    "baseline_coverage": f"{causal_parameters.get('baseline_coverage_pct', 0):.1f}%"
+                },
+                status="SUCCESS"
+            )
 
         self._log_event("analyst_complete", {
             "baseline_avg": causal_parameters.get("baseline_velocity_avg", 0)
@@ -223,12 +292,45 @@ class TPOOrchestrator:
 
             # Strategist generates calendar
             self._log_event("strategist_generation_start", {"iteration": iteration})
+            self.journey.log_agent_b_iteration_start(
+                iteration=iteration,
+                feedback=feedback.get('feedback') if feedback else None
+            )
+
             calendar = self.strategist.generate_calendar(feedback)
+
             self._log_event("strategist_generation_complete", {
                 "iteration": iteration,
                 "events_count": len(calendar.get("calendar_events", [])),
                 "total_spend": calendar.get("total_spend", 0)
             })
+            # Log calendar generation with more details
+            events = calendar.get("calendar_events", [])
+            ppgs_used = set(e.get('ppg', 'unknown') for e in events)
+            weeks_used = sorted(set(e.get('week', 0) for e in events))
+
+            self.journey.log_agent_b_calendar_generated(
+                iteration=iteration,
+                event_count=len(events),
+                total_spend=calendar.get("total_spend", 0)
+            )
+
+            # Log additional calendar details
+            self.journey.log_event(
+                phase="STEP 3: REJECTION LOOP (AGENT B <-> AGENT C)",
+                event_type="CALENDAR_DETAILS",
+                description=f"Iteration {iteration}: Calendar composition",
+                details={
+                    "ppgs": sorted(list(ppgs_used)),
+                    "ppg_count": len(ppgs_used),
+                    "weeks_range": f"{min(weeks_used)}-{max(weeks_used)}" if weeks_used else "none",
+                    "sample_events": [
+                        f"Week {e.get('week')}: {e.get('ppg')} at {e.get('retailer')} ({e.get('discount_depth', 0)*100:.0f}% off)"
+                        for e in events[:3]  # First 3 events as sample
+                    ]
+                },
+                status="INFO"
+            )
 
             # Validate calendar format (basic check)
             if not calendar.get("calendar_events"):
@@ -237,6 +339,7 @@ class TPOOrchestrator:
 
             # Auditor reviews calendar
             self._log_event("auditor_review_start", {"iteration": iteration})
+            self.journey.log_agent_c_validation_start(iteration=iteration)
 
             # Build constraints dict for auditor
             constraints = {
@@ -255,6 +358,42 @@ class TPOOrchestrator:
                 "status": audit_report["status"],
                 "violations_count": len(audit_report.get("violations", []))
             })
+            self.journey.log_agent_c_result(
+                iteration=iteration,
+                status=audit_report["status"],
+                violations=audit_report.get("violations", []),
+                feedback=audit_report.get("feedback")
+            )
+
+            # Log detailed violations if rejected
+            if audit_report["status"] == "REJECTED" and audit_report.get("violations"):
+                violation_details = []
+                for v in audit_report["violations"][:5]:  # First 5 violations
+                    vtype = v.get('type', v.get('category', 'UNKNOWN'))
+                    if 'gap' in vtype.lower():
+                        violation_details.append(
+                            f"{vtype}: {v.get('description', 'PPG at weeks with insufficient gap')}"
+                        )
+                    elif 'frequency' in vtype.lower():
+                        violation_details.append(
+                            f"{vtype}: {v.get('description', 'Too many promotions')}"
+                        )
+                    else:
+                        violation_details.append(
+                            f"{vtype}: {v.get('description', str(v))}"
+                        )
+
+                self.journey.log_event(
+                    phase="STEP 3: REJECTION LOOP (AGENT B <-> AGENT C)",
+                    event_type="VIOLATION_DETAILS",
+                    description=f"Iteration {iteration}: Top violations found",
+                    details={
+                        "violations": violation_details,
+                        "total_violations": len(audit_report.get("violations", [])),
+                        "feedback_summary": audit_report.get("feedback", "")[:200] + "..." if len(audit_report.get("feedback", "")) > 200 else audit_report.get("feedback", "")
+                    },
+                    status="WARNING"
+                )
 
             # Log the exchange
             logger.info(f"Strategist proposed calendar with {len(calendar['calendar_events'])} events")
@@ -263,24 +402,30 @@ class TPOOrchestrator:
 
             if audit_report["status"] == "APPROVED":
                 logger.info("✓ Calendar APPROVED by Auditor")
+                self.journey.log_rejection_loop_complete(
+                    final_status="APPROVED",
+                    total_iterations=iteration
+                )
                 return calendar, audit_report
 
             # Calendar rejected - log violations and prepare feedback
             logger.warning(f"✗ Calendar REJECTED - {len(audit_report['violations'])} violations")
             for violation in audit_report["violations"]:
-                # Format violation details based on type
-                if violation['type'] == 'GAP_VIOLATION':
-                    detail_str = f"PPG {violation['ppg']} at Retailer {violation['retailer']}: weeks {violation['week1']}-{violation['week2']} (gap: {violation['gap']}, required: {violation['min_required']})"
-                elif violation['type'] == 'BUDGET_VIOLATION':
+                # Format violation details based on type or category
+                vtype = violation.get('type', violation.get('category', 'UNKNOWN'))
+
+                if 'gap' in vtype.lower() or vtype == 'GAP_VIOLATION':
+                    detail_str = f"PPG {violation.get('ppg', 'N/A')} at Retailer {violation.get('retailer', 'N/A')}: weeks {violation.get('week1', 'N/A')}-{violation.get('week2', 'N/A')} (gap: {violation.get('gap', 'N/A')}, required: {violation.get('min_required', 'N/A')})"
+                elif 'budget' in vtype.lower() or vtype == 'BUDGET_VIOLATION':
                     detail_str = f"Total spend ${violation.get('total_spend', 'N/A'):,.0f} exceeds budget ${violation.get('budget_limit', 'N/A'):,.0f}"
-                elif violation['type'] == 'FREQUENCY_VIOLATION':
-                    detail_str = f"PPG {violation['ppg']}: {violation.get('count', 0)} promotions exceeds limit {violation.get('max_allowed', 0)}"
-                elif violation['type'] == 'BLACKOUT_VIOLATION':
+                elif 'frequency' in vtype.lower() or vtype == 'FREQUENCY_VIOLATION':
+                    detail_str = f"PPG {violation.get('ppg', 'N/A')}: {violation.get('count', 0)} promotions exceeds limit {violation.get('max_allowed', 0)}"
+                elif 'blackout' in vtype.lower() or vtype == 'BLACKOUT_VIOLATION':
                     detail_str = f"Promotion in blackout week {violation.get('week', 'N/A')}"
                 else:
                     # Generic formatting for unknown violation types
-                    detail_str = str(violation.get('details', violation))
-                logger.warning(f"  - {violation['type']}: {detail_str}")
+                    detail_str = violation.get('description', str(violation))
+                logger.warning(f"  - {vtype}: {detail_str}")
 
             logger.info(f"Auditor feedback: {audit_report['feedback']}")
 
@@ -289,6 +434,10 @@ class TPOOrchestrator:
         # Max iterations reached without approval - return last calendar anyway
         logger.warning(f"Max iterations ({self.max_iterations}) reached without approval")
         logger.warning(f"Returning last calendar (status: {audit_report.get('status', 'UNKNOWN')})")
+        self.journey.log_rejection_loop_complete(
+            final_status=audit_report.get('status', 'MAX_ITERATIONS'),
+            total_iterations=self.max_iterations
+        )
         return calendar, audit_report
 
     def _generate_reports(
@@ -359,27 +508,45 @@ class TPOOrchestrator:
 
     def _save_outputs(self, calendar: Dict[str, Any], reports: Dict[str, Any]):
         """Save all outputs to files."""
+        self.journey.log_reports_generation()
+
         # Save optimized calendar as CSV
         calendar_path = self.output_dir / "optimized_calendar.csv"
         self._save_calendar_csv(calendar, calendar_path)
         logger.info(f"Saved: {calendar_path}")
+        self.journey.log_report_saved(
+            filename="optimized_calendar.csv",
+            description="52-week promotion calendar (CSV format)"
+        )
 
         # Save financial impact report as JSON
         financial_path = self.output_dir / "financial_impact_report.json"
         with open(financial_path, "w") as f:
             json.dump(reports["financial_impact"], f, indent=2)
         logger.info(f"Saved: {financial_path}")
+        self.journey.log_report_saved(
+            filename="financial_impact_report.json",
+            description="Base vs. Optimized financial comparison"
+        )
 
         # Save baseline validation as CSV
         validation_path = self.output_dir / "baseline_validation.csv"
         import pandas as pd
         pd.DataFrame([reports["baseline_validation"]]).to_csv(validation_path, index=False)
         logger.info(f"Saved: {validation_path}")
+        self.journey.log_report_saved(
+            filename="baseline_validation.csv",
+            description="Baseline forecast accuracy metrics"
+        )
 
         # Save execution log
         log_path = self.output_dir / "agent_execution_log.txt"
         self._save_execution_log(log_path)
         logger.info(f"Saved: {log_path}")
+        self.journey.log_report_saved(
+            filename="agent_execution_log.txt",
+            description="Complete agent interaction log"
+        )
 
     def _save_calendar_csv(self, calendar: Dict[str, Any], path: Path):
         """Save calendar as CSV file."""

@@ -139,7 +139,7 @@ def main():
         print(f"Budget: ${args.budget:,.0f}")
         print(f"Final Status: {results['reports']['audit_summary']['status']}")
         print(f"Calendar Events: {len(results['calendar']['calendar_events'])}")
-        print(f"Total Spend: ${results['calendar']['total_projected_spend']:,.0f}")
+        print(f"Total Spend: ${results['calendar'].get('total_spend', results['calendar'].get('total_projected_spend', 0)):,.0f}")
         print(f"\nOutputs saved to: {args.output_dir}/")
         print("  - optimized_calendar.csv")
         print("  - financial_impact_report.json")
