@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TPO AI Agents - Interactive Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: #F9FAFB;
+            color: #111827;
+            line-height: 1.6;
+        }
+
+        .dashboard {
+            display: grid;
+            grid-template-columns: 350px 1fr 350px;
+            grid-template-rows: auto 1fr auto;
+            gap: 20px;
+            padding: 20px;
+            height: 100vh;
+        }
+
+        header {
+            grid-column: 1 / -1;
+            background: linear-gradient(135deg, #1E40AF 0%, #3B82F6 100%);
+            color: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        header h1 {
+            font-size: 2em;
+            margin-bottom: 5px;
+        }
+
+        header p {
+            opacity: 0.9;
+        }
+
+        .panel {
+            background: white;
+            border-radius: 12px;
+            padding: 25px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+            overflow-y: auto;
+        }
+
+        .panel h2 {
+            color: #1E40AF;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 3px solid #E5E7EB;
+        }
+
+        .config-panel {
+            grid-row: 2;
+        }
+
+        .main-panel {
+            grid-row: 2;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .results-panel {
+            grid-row: 2;
+        }
+
+        .history-panel {
+            grid-column: 1 / -1;
+            max-height: 200px;
+        }
+
+        /* Form Styling */
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            font-weight: 600;
+            color: #374151;
+            margin-bottom: 8px;
+        }
+
+        select, input[type="range"] {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #E5E7EB;
+            border-radius: 6px;
+            font-size: 1em;
+        }
+
+        select:focus {
+            outline: none;
+            border-color: #3B82F6;
+        }
+
+        input[type="range"] {
+            padding: 0;
+        }
+
+        .slider-value {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #1E40AF;
+            margin-top: 5px;
+        }
+
+        button {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #1E40AF 0%, #3B82F6 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 1.1em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* Progress Bar */
+        .progress-container {
+            margin-bottom: 20px;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 30px;
+            background: #E5E7EB;
+            border-radius: 15px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #059669 0%, #10B981 100%);
+            width: 0%;
+            transition: width 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 600;
+        }
+
+        .status-text {
+            margin-top: 10px;
+            padding: 12px;
+            background: #F3F4F6;
+            border-radius: 6px;
+            text-align: center;
+            font-weight: 500;
+        }
+
+        .status-running {
+            background: #DBEAFE;
+            color: #1E40AF;
+        }
+
+        .status-completed {
+            background: #D1FAE5;
+            color: #065F46;
+        }
+
+        .status-failed {
+            background: #FEE2E2;
+            color: #991B1B;
+        }
+
+        /* Journey Log */
+        .journey-log {
+            flex: 1;
+            background: #1F2937;
+            color: #F9FAFB;
+            padding: 15px;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            margin-top: 10px;
+        }
+
+        /* Metrics Cards */
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .metric-card {
+            background: linear-gradient(135deg, #F3F4F6 0%, #E5E7EB 100%);
+            padding: 20px;
+            border-radius: 8px;
+            border-left: 4px solid #1E40AF;
+        }
+
+        .metric-label {
+            font-size: 0.85em;
+            color: #6B7280;
+            text-transform: uppercase;
+            margin-bottom: 5px;
+        }
+
+        .metric-value {
+            font-size: 1.8em;
+            font-weight: bold;
+            color: #1E40AF;
+        }
+
+        /* Calendar Table */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9em;
+        }
+
+        thead {
+            background: #F3F4F6;
+        }
+
+        th {
+            padding: 10px;
+            text-align: left;
+            font-weight: 600;
+            border-bottom: 2px solid #E5E7EB;
+        }
+
+        td {
+            padding: 10px;
+            border-bottom: 1px solid #F3F4F6;
+        }
+
+        tbody tr:hover {
+            background: #F9FAFB;
+        }
+
+        /* Run History */
+        .run-item {
+            padding: 12px;
+            background: #F9FAFB;
+            border-radius: 6px;
+            margin-bottom: 10px;
+            cursor: pointer;
+            border-left: 4px solid #E5E7EB;
+            transition: border-color 0.2s;
+        }
+
+        .run-item:hover {
+            border-left-color: #3B82F6;
+        }
+
+        .run-item.active {
+            border-left-color: #1E40AF;
+            background: #EFF6FF;
+        }
+
+        @media (max-width: 1400px) {
+            .dashboard {
+                grid-template-columns: 1fr;
+                grid-template-rows: auto auto auto auto;
+            }
+
+            .config-panel,
+            .main-panel,
+            .results-panel,
+            .history-panel {
+                grid-column: 1;
+                grid-row: auto;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="dashboard">
+        <header>
+            <h1>TPO AI Agents - Interactive Dashboard</h1>
+            <p>Configure and run promotional calendar optimizations with AI agents</p>
+        </header>
+
+        <!-- Configuration Panel -->
+        <div class="panel config-panel">
+            <h2>Configuration</h2>
+            <form id="config-form">
+                <div class="form-group">
+                    <label for="objective">Optimization Objective:</label>
+                    <select id="objective" name="objective">
+                        <option value="volume">Maximize Unit Volume</option>
+                        <option value="profit">Maximize Profit</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="budget">Budget:</label>
+                    <input type="range" id="budget" name="budget"
+                           min="100000" max="2000000" step="50000" value="1000000">
+                    <div class="slider-value" id="budget-value">$1,000,000</div>
+                </div>
+
+                <button type="submit" id="run-button">Run Optimization</button>
+            </form>
+
+            <div style="margin-top: 30px;">
+                <h3 style="font-size: 0.9em; color: #6B7280; margin-bottom: 10px;">Quick Presets:</h3>
+                <button onclick="setPreset('conservative')" style="margin-bottom: 10px; background: #6B7280;">
+                    Conservative ($500K)
+                </button>
+                <button onclick="setPreset('aggressive')" style="background: #DC2626;">
+                    Aggressive ($2M)
+                </button>
+            </div>
+        </div>
+
+        <!-- Main Panel (Progress + Journey Log) -->
+        <div class="panel main-panel">
+            <h2>Execution Monitor</h2>
+
+            <div class="progress-container">
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progress-fill">0%</div>
+                </div>
+                <div class="status-text" id="status-text">Ready to run</div>
+            </div>
+
+            <div class="journey-log" id="journey-log">
+Waiting for optimization to start...
+
+Configure your parameters and click "Run Optimization" to begin.
+            </div>
+        </div>
+
+        <!-- Results Panel -->
+        <div class="panel results-panel">
+            <h2>Results</h2>
+
+            <div id="results-content">
+                <p style="color: #6B7280; text-align: center; padding: 40px 0;">
+                    No results yet.<br>Run an optimization to see results here.
+                </p>
+            </div>
+        </div>
+
+        <!-- Run History Panel -->
+        <div class="panel history-panel">
+            <h2>Run History</h2>
+            <div id="run-history">
+                <p style="color: #6B7280;">No runs yet. Start your first optimization above.</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // State
+        let currentRunId = null;
+        let pollingInterval = null;
+
+        // Budget slider
+        document.getElementById('budget').addEventListener('input', (e) => {
+            const value = parseInt(e.target.value);
+            document.getElementById('budget-value').textContent =
+                '$' + value.toLocaleString();
+        });
+
+        // Presets
+        function setPreset(type) {
+            const budgetSlider = document.getElementById('budget');
+            const objective = document.getElementById('objective');
+
+            if (type === 'conservative') {
+                budgetSlider.value = 500000;
+                objective.value = 'profit';
+            } else if (type === 'aggressive') {
+                budgetSlider.value = 2000000;
+                objective.value = 'volume';
+            }
+
+            // Update display
+            document.getElementById('budget-value').textContent =
+                '$' + parseInt(budgetSlider.value).toLocaleString();
+        }
+
+        // Form submission
+        document.getElementById('config-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const params = {
+                objective: document.getElementById('objective').value,
+                budget: parseInt(document.getElementById('budget').value)
+            };
+
+            // Disable button
+            const runButton = document.getElementById('run-button');
+            runButton.disabled = true;
+            runButton.textContent = 'Starting...';
+
+            try {
+                const response = await fetch('/api/run', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(params)
+                });
+
+                const data = await response.json();
+
+                if (data.run_id) {
+                    currentRunId = data.run_id;
+                    updateStatus('running', 'Optimization started...');
+                    startPolling();
+                    loadRunHistory();
+                } else {
+                    throw new Error(data.error || 'Failed to start optimization');
+                }
+
+            } catch (error) {
+                updateStatus('failed', 'Error: ' + error.message);
+                runButton.disabled = false;
+                runButton.textContent = 'Run Optimization';
+            }
+        });
+
+        // Polling for updates
+        function startPolling() {
+            // Clear any existing interval
+            if (pollingInterval) {
+                clearInterval(pollingInterval);
+            }
+
+            // Poll every 2 seconds
+            pollingInterval = setInterval(async () => {
+                await updateJourneyLog();
+                await checkStatus();
+            }, 2000);
+        }
+
+        function stopPolling() {
+            if (pollingInterval) {
+                clearInterval(pollingInterval);
+                pollingInterval = null;
+            }
+
+            const runButton = document.getElementById('run-button');
+            runButton.disabled = false;
+            runButton.textContent = 'Run Optimization';
+        }
+
+        // Update journey log
+        async function updateJourneyLog() {
+            if (!currentRunId) return;
+
+            try {
+                const response = await fetch(`/api/journey/${currentRunId}`);
+                const data = await response.json();
+
+                const journeyLog = document.getElementById('journey-log');
+                journeyLog.textContent = data.journey || 'No log data yet...';
+
+                // Auto-scroll to bottom
+                journeyLog.scrollTop = journeyLog.scrollHeight;
+
+            } catch (error) {
+                console.error('Error fetching journey:', error);
+            }
+        }
+
+        // Check run status
+        async function checkStatus() {
+            if (!currentRunId) return;
+
+            try {
+                const response = await fetch(`/api/status/${currentRunId}`);
+                const data = await response.json();
+
+                if (data.status === 'completed') {
+                    updateStatus('completed', 'Optimization completed successfully!');
+                    updateProgress(100);
+                    stopPolling();
+                    loadResults();
+                } else if (data.status === 'failed') {
+                    updateStatus('failed', 'Optimization failed: ' + (data.error || 'Unknown error'));
+                    stopPolling();
+                } else if (data.status === 'running') {
+                    // Estimate progress from journey log
+                    estimateProgress();
+                }
+
+            } catch (error) {
+                console.error('Error checking status:', error);
+            }
+        }
+
+        // Estimate progress from journey log content
+        function estimateProgress() {
+            const journeyText = document.getElementById('journey-log').textContent;
+            let progress = 0;
+
+            if (journeyText.includes('STEP 1')) progress = 15;
+            if (journeyText.includes('STEP 2')) progress = 30;
+            if (journeyText.includes('STEP 3')) progress = 50;
+            if (journeyText.includes('STEP 4')) progress = 70;
+            if (journeyText.includes('STEP 5')) progress = 80;
+            if (journeyText.includes('STEP 6')) progress = 90;
+            if (journeyText.includes('STEP 7')) progress = 95;
+
+            updateProgress(progress);
+        }
+
+        // Update status text
+        function updateStatus(type, message) {
+            const statusText = document.getElementById('status-text');
+            statusText.textContent = message;
+            statusText.className = 'status-text status-' + type;
+        }
+
+        // Update progress bar
+        function updateProgress(percent) {
+            const progressFill = document.getElementById('progress-fill');
+            progressFill.style.width = percent + '%';
+            progressFill.textContent = Math.round(percent) + '%';
+        }
+
+        // Load results
+        async function loadResults() {
+            if (!currentRunId) return;
+
+            try {
+                const response = await fetch(`/api/results/${currentRunId}`);
+                const data = await response.json();
+
+                displayResults(data);
+
+            } catch (error) {
+                console.error('Error loading results:', error);
+            }
+        }
+
+        // Display results
+        function displayResults(data) {
+            const resultsContent = document.getElementById('results-content');
+
+            if (!data.calendar && !data.metrics) {
+                resultsContent.innerHTML = '<p style="color: #DC2626;">Results not available</p>';
+                return;
+            }
+
+            let html = '';
+
+            // Metrics
+            if (data.metrics) {
+                html += '<div class="metrics-grid">';
+
+                if (data.metrics.total_events !== undefined) {
+                    html += `
+                        <div class="metric-card">
+                            <div class="metric-label">Events</div>
+                            <div class="metric-value">${data.metrics.total_events}</div>
+                        </div>
+                    `;
+                }
+
+                if (data.metrics.total_spend !== undefined) {
+                    html += `
+                        <div class="metric-card">
+                            <div class="metric-label">Total Spend</div>
+                            <div class="metric-value">$${data.metrics.total_spend.toLocaleString()}</div>
+                        </div>
+                    `;
+                }
+
+                if (data.metrics.mape !== undefined) {
+                    html += `
+                        <div class="metric-card">
+                            <div class="metric-label">MAPE</div>
+                            <div class="metric-value">${data.metrics.mape.toFixed(1)}%</div>
+                        </div>
+                    `;
+                }
+
+                if (data.metrics.total_iterations !== undefined) {
+                    html += `
+                        <div class="metric-card">
+                            <div class="metric-label">Iterations</div>
+                            <div class="metric-value">${data.metrics.total_iterations}</div>
+                        </div>
+                    `;
+                }
+
+                html += '</div>';
+            }
+
+            // Calendar preview
+            if (data.calendar && data.calendar.calendar_events) {
+                const events = data.calendar.calendar_events.slice(0, 10);
+                html += '<h3 style="margin: 20px 0 10px 0; color: #374151;">Calendar Preview (first 10 events)</h3>';
+                html += '<div style="overflow-x: auto;"><table><thead><tr>';
+                html += '<th>Week</th><th>PPG</th><th>Retailer</th><th>Discount</th>';
+                html += '</tr></thead><tbody>';
+
+                events.forEach(event => {
+                    html += '<tr>';
+                    html += `<td>${event.week || 'N/A'}</td>`;
+                    html += `<td>${(event.ppg || 'N/A').substring(0, 15)}...</td>`;
+                    html += `<td>${event.retailer !== undefined ? event.retailer : 'N/A'}</td>`;
+                    html += `<td>${event.discount_depth ? (event.discount_depth * 100).toFixed(0) + '%' : 'N/A'}</td>`;
+                    html += '</tr>';
+                });
+
+                html += '</tbody></table></div>';
+            }
+
+            resultsContent.innerHTML = html;
+        }
+
+        // Load run history
+        async function loadRunHistory() {
+            try {
+                const response = await fetch('/api/runs');
+                const data = await response.json();
+
+                const historyContainer = document.getElementById('run-history');
+
+                if (!data.runs || data.runs.length === 0) {
+                    historyContainer.innerHTML = '<p style="color: #6B7280;">No runs yet.</p>';
+                    return;
+                }
+
+                let html = '';
+                data.runs.forEach(run => {
+                    const isActive = run.run_id === currentRunId;
+                    const statusClass = isActive ? 'active' : '';
+
+                    html += `
+                        <div class="run-item ${statusClass}" onclick="loadRun('${run.run_id}')">
+                            <strong>Run ${run.run_id}</strong> -
+                            ${run.params.objective} @ $${run.params.budget.toLocaleString()} -
+                            <span style="color: ${run.status === 'completed' ? '#059669' : run.status === 'failed' ? '#DC2626' : '#3B82F6'}">
+                                ${run.status}
+                            </span>
+                        </div>
+                    `;
+                });
+
+                historyContainer.innerHTML = html;
+
+            } catch (error) {
+                console.error('Error loading history:', error);
+            }
+        }
+
+        // Load specific run
+        async function loadRun(runId) {
+            currentRunId = runId;
+            await updateJourneyLog();
+            await checkStatus();
+            await loadResults();
+            await loadRunHistory(); // Refresh to update active state
+        }
+
+        // Initial load
+        loadRunHistory();
+    </script>
+</body>
+</html>

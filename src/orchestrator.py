@@ -16,7 +16,6 @@ from .agents import AnalystAgent, StrategistAgent, AuditorAgent
 from .utils import DataLoader, validate_calendar_format
 from .utils.report_generator import ExecutionReportGenerator, generate_quick_summary
 from .utils.journey_tracker import JourneyTracker
-from .utils.dashboard_generator import generate_dashboard
 
 
 class TPOOrchestrator:
@@ -613,22 +612,6 @@ class TPOOrchestrator:
 
         logger.info(f"Saved: {report_gen.report_path}")
 
-        # Generate interactive HTML dashboard
-        self.journey.log_step_start(8, "DASHBOARD GENERATION")
-        try:
-            generate_dashboard(
-                journey_log_path=str(self.output_dir / "OPTIMIZATION_JOURNEY.txt"),
-                execution_summary_path=str(self.output_dir / "EXECUTION_SUMMARY.txt"),
-                calendar_path=str(self.output_dir / "promotion_calendar.json"),
-                causal_params_path=str(self.output_dir / "causal_parameters.json"),
-                output_path=str(self.output_dir / "journey_dashboard.html")
-            )
-            self.journey.log_event("Dashboard saved: outputs/journey_dashboard.html", "SUCCESS")
-            logger.info("Dashboard saved: outputs/journey_dashboard.html")
-        except Exception as e:
-            self.journey.log_event(f"Dashboard generation failed: {str(e)}", "ERROR")
-            logger.error(f"Dashboard generation failed: {str(e)}")
-
-        # Also print quick summary to console
+        # Print quick summary to console
         quick_summary = generate_quick_summary(output_dir=str(self.output_dir))
         print("\n" + quick_summary)
