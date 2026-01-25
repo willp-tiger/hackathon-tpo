@@ -261,7 +261,8 @@ class TPOOrchestrator:
             objective=objective,
             budget_limit=budget,
             max_iterations=self.max_iterations,
-            output_dir=str(self.output_dir)
+            output_dir=str(self.output_dir),
+            data_dir=self.data_dir
         )
 
         self._log_event("strategist_initialized", {"objective": objective})

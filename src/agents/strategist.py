@@ -35,7 +35,8 @@ class StrategistAgent:
         objective: str,
         budget_limit: float,
         max_iterations: int = 10,
-        output_dir: str = "outputs"
+        output_dir: str = "outputs",
+        data_dir: str = "case-data"
     ):
         """
         Initialize the Strategist Agent.
@@ -46,16 +47,29 @@ class StrategistAgent:
             budget_limit: Maximum promotional spend in dollars
             max_iterations: Maximum rejection loop iterations (default: 10)
             output_dir: Directory for output files (default: "outputs")
+            data_dir: Directory containing input data files (default: "case-data")
         """
         self.client = Anthropic(api_key=api_key)
         self.objective = objective.lower()
         self.budget_limit = budget_limit
         self.max_iterations = max_iterations
         self.output_dir = output_dir
+        self.data_dir = data_dir
 
         # Validate objective
         if self.objective not in ['volume', 'profit']:
             raise ValueError(f"Invalid objective: {objective}. Must be 'volume' or 'profit'")
+
+        # Load required data for cost calculations
+        from src.utils import DataLoader
+        loader = DataLoader(data_dir)
+
+        self.finance_data = loader.load_financials()
+        self.promo_config = loader.load_promo_config()
+
+        logger.info(f"Initialized StrategistAgent: objective={self.objective}, budget=${budget_limit:,.0f}")
+        logger.info(f"Loaded finance data: {len(self.finance_data)} PPGs")
+        logger.info(f"Loaded promo config: {len(self.promo_config)} tiers")
 
         # State
         self.causal_parameters = None
@@ -65,7 +79,51 @@ class StrategistAgent:
         # Execution log
         self.execution_log = []
 
-        logger.info(f"Initialized StrategistAgent: objective={self.objective}, budget=${budget_limit:,.0f}")
+    def _get_unit_price(self, ppg: str) -> float:
+        """
+        Get unit price for PPG from Finance.xlsx.
+
+        Args:
+            ppg: Product group identifier
+
+        Returns:
+            Unit price (List Price column)
+        """
+        if self.finance_data is None:
+            raise ValueError("Finance data not loaded - cannot calculate TPR costs")
+
+        ppg_finance = self.finance_data[self.finance_data["PPG"] == ppg]
+        if ppg_finance.empty:
+            logger.warning(f"PPG '{ppg}' not found in Finance.xlsx - using default price $10.00")
+            return 10.0
+
+        unit_price = ppg_finance.iloc[0]["List Price"]
+        return unit_price
+
+    def _get_display_cost(self, display_tier: str) -> float:
+        """
+        Get display cost from Promo_config.csv.
+
+        Args:
+            display_tier: Display tier (bronze, silver, gold, platinum, or none)
+
+        Returns:
+            Display cost in dollars
+        """
+        if display_tier is None or display_tier.lower() == "none":
+            return 0.0
+
+        if self.promo_config is None:
+            logger.warning("Promo config not loaded - using default display cost $0")
+            return 0.0
+
+        tier_col = f"display_{display_tier.lower()}"
+        if tier_col not in self.promo_config.columns:
+            logger.warning(f"Display tier '{display_tier}' not found in promo config - using $0")
+            return 0.0
+
+        display_cost = self.promo_config[tier_col].iloc[0]
+        return display_cost
 
     def generate_calendar(self, feedback: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
@@ -353,8 +411,16 @@ You MUST complete step 4 - calling save_promotion_calendar is mandatory."""
                         discount_depth = 0.25  # Moderate discount for profit
                         display_tier = "silver"
 
-                    # Estimate cost (simplified)
-                    promo_cost = 15000  # Placeholder
+                    # Calculate actual cost using real data
+                    # TPR cost = baseline_units × discount_depth × unit_price
+                    baseline_velocity = self.causal_parameters.get("baseline_velocity_avg", 0)
+                    unit_price = self._get_unit_price(ppg)
+                    tpr_cost = baseline_velocity * discount_depth * unit_price
+
+                    # Display cost from promo config
+                    display_cost = self._get_display_cost(display_tier)
+
+                    promo_cost = tpr_cost + display_cost
 
                     if total_spend + promo_cost > target_spend:
                         break
@@ -429,14 +495,28 @@ You MUST complete step 4 - calling save_promotion_calendar is mandatory."""
 
         # Update current calendar
         self.current_calendar["calendar_events"] = calendar_events
-        total_spend = len(calendar_events) * 15000  # Simplified cost calculation
+
+        # Recalculate total spend using SAME logic as generation
+        total_spend = 0
+        baseline_velocity = self.causal_parameters.get("baseline_velocity_avg", 0)
+
+        for event in calendar_events:
+            ppg = event.get("ppg")
+            discount_depth = event.get("discount_depth", 0)
+            display_tier = event.get("display_tier", "none")
+
+            unit_price = self._get_unit_price(ppg)
+            tpr_cost = baseline_velocity * discount_depth * unit_price
+            display_cost = self._get_display_cost(display_tier)
+
+            total_spend += tpr_cost + display_cost
 
         return {
             "status": "adjusted",
             "violations_addressed": len(violations),
             "adjustments": adjustments_made,
             "new_event_count": len(calendar_events),
-            "new_total_spend": total_spend,
+            "new_total_spend": round(total_spend, 2),
             "recommendation": "Claude should regenerate calendar with constraint awareness rather than just removing events"
         }
 
@@ -504,8 +584,15 @@ You MUST complete step 4 - calling save_promotion_calendar is mandatory."""
             total_incremental_volume += incremental_volume
             total_baseline_volume += week_baseline
 
-            # Estimate cost (simplified: TPR cost)
-            total_cost += event.get("tpr_cost", 0) + event.get("display_cost", 0)
+            # Calculate cost on-the-fly (events don't have cost fields)
+            ppg = event.get("ppg")
+            display_tier = event.get("display_tier", "none")
+
+            unit_price = self._get_unit_price(ppg)
+            tpr_cost = baseline_velocity * discount_depth * unit_price
+            display_cost = self._get_display_cost(display_tier)
+
+            total_cost += tpr_cost + display_cost
 
         # Calculate projected metrics
         projected_volume = total_baseline_volume + total_incremental_volume
