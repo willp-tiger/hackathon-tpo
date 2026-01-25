@@ -252,7 +252,19 @@ class TPOOrchestrator:
             # Calendar rejected - log violations and prepare feedback
             logger.warning(f"✗ Calendar REJECTED - {len(audit_report['violations'])} violations")
             for violation in audit_report["violations"]:
-                logger.warning(f"  - {violation['type']}: {violation['details']}")
+                # Format violation details based on type
+                if violation['type'] == 'GAP_VIOLATION':
+                    detail_str = f"PPG {violation['ppg']} at Retailer {violation['retailer']}: weeks {violation['week1']}-{violation['week2']} (gap: {violation['gap']}, required: {violation['min_required']})"
+                elif violation['type'] == 'BUDGET_VIOLATION':
+                    detail_str = f"Total spend ${violation.get('total_spend', 'N/A'):,.0f} exceeds budget ${violation.get('budget_limit', 'N/A'):,.0f}"
+                elif violation['type'] == 'FREQUENCY_VIOLATION':
+                    detail_str = f"PPG {violation['ppg']}: {violation.get('count', 0)} promotions exceeds limit {violation.get('max_allowed', 0)}"
+                elif violation['type'] == 'BLACKOUT_VIOLATION':
+                    detail_str = f"Promotion in blackout week {violation.get('week', 'N/A')}"
+                else:
+                    # Generic formatting for unknown violation types
+                    detail_str = str(violation.get('details', violation))
+                logger.warning(f"  - {violation['type']}: {detail_str}")
 
             logger.info(f"Auditor feedback: {audit_report['feedback']}")
 
