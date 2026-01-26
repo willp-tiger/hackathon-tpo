@@ -151,6 +151,36 @@ class StrategistAgent:
             logger.warning(f"Invalid display cost format: '{cost_str}' - using $0")
             return 0.0
 
+    def _get_unit_margin(self, ppg: str, retailer: str) -> float:
+        """
+        Get retailer margin for PPG from Finance.xlsx.
+
+        Args:
+            ppg: Product group identifier (from Sales data, without APN)
+            retailer: Retailer identifier (e.g., "Retailer 0")
+
+        Returns:
+            Retailer margin as decimal (e.g., 0.39 for 39% margin)
+        """
+        if self.finance_data is None:
+            logger.warning("Finance data not loaded - using default margin 30%")
+            return 0.30
+
+        # Match PPGs by prefix and retailer
+        ppg_finance = self.finance_data[
+            (self.finance_data["PPG"].str.startswith(ppg + "_", na=False)) &
+            (self.finance_data["Retailer"] == retailer)
+        ]
+
+        if ppg_finance.empty:
+            logger.warning(f"PPG '{ppg}' at '{retailer}' not found in Finance.xlsx - using default margin 30%")
+            return 0.30
+
+        # Average margin across all APNs for this PPG-Retailer combination
+        unit_margin = ppg_finance["Retailer Margin"].mean()
+        logger.debug(f"PPG '{ppg}' at '{retailer}': {len(ppg_finance)} APNs found, avg margin {unit_margin:.2%}")
+        return unit_margin
+
     def generate_calendar(self, feedback: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Main orchestration method: Generate optimized promotion calendar.
@@ -662,11 +692,15 @@ You MUST complete step 4 - calling save_promotion_calendar is mandatory."""
         total_incremental_volume = 0
         total_baseline_volume = 0
         total_cost = 0
+        total_incremental_profit = 0
 
         for event in calendar_events:
             week = event.get("week")
             discount_depth = event.get("discount_depth", 0)
             display_active = event.get("display_active", False)
+            ppg = event.get("ppg")
+            retailer = event.get("retailer")
+            display_tier = event.get("display_tier", "none")
 
             # Get seasonality factor
             seasonality = seasonality_factors.get(str(week), 1.0)
@@ -698,24 +732,30 @@ You MUST complete step 4 - calling save_promotion_calendar is mandatory."""
             total_baseline_volume += week_baseline
 
             # Calculate cost on-the-fly (events don't have cost fields)
-            ppg = event.get("ppg")
-            display_tier = event.get("display_tier", "none")
-
             unit_price = self._get_unit_price(ppg)
             tpr_cost = baseline_velocity * discount_depth * unit_price
             display_cost = self._get_display_cost(display_tier)
+            event_cost = tpr_cost + display_cost
+            total_cost += event_cost
 
-            total_cost += tpr_cost + display_cost
+            # Calculate incremental revenue
+            # Revenue = Incremental Units × Unit Price
+            incremental_revenue = incremental_volume * unit_price
+            total_incremental_profit += incremental_revenue  # Using revenue for ROI
 
         # Calculate projected metrics
         projected_volume = total_baseline_volume + total_incremental_volume
-        projected_roi = (total_incremental_volume / total_cost * 100) if total_cost > 0 else 0
+
+        # ROI = (Incremental Revenue - Total Cost) / Total Cost × 100
+        # This shows return per dollar spent on promotions
+        projected_roi = ((total_incremental_profit - total_cost) / total_cost * 100) if total_cost > 0 else 0
 
         return {
             "projected_volume": round(projected_volume, 2),
             "incremental_volume": round(total_incremental_volume, 2),
             "baseline_volume": round(total_baseline_volume, 2),
             "total_cost": round(total_cost, 2),
+            "incremental_revenue": round(total_incremental_profit, 2),
             "projected_roi": round(projected_roi, 2),
             "status": "calculated"
         }
