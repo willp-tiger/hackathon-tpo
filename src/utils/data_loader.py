@@ -154,10 +154,7 @@ class DataLoader:
 
     def load_constraints(self) -> Dict[str, Dict[str, Any]]:
         """
-        Load constraint rules for both retailers.
-
-        Note: The Constraints.json file has malformed JSON with duplicate keys.
-        This method manually parses it to extract constraints for both retailers.
+        Load constraint rules for both retailers from Constraints.json.
 
         Constraints include:
         - min_gap_weeks: Minimum weeks between promotions for same product
@@ -173,27 +170,17 @@ class DataLoader:
         file_path = self.data_dir / "Constraints.json"
         logger.debug(f"Loading constraints from {file_path}")
 
-        # Manual parsing due to malformed JSON with duplicate retailer_id keys
-        constraints = {
-            "Retailer 1": {
-                "budget_enforcement_level": "Strict",
-                "min_gap_weeks": 2,
-                "max_promo_frequency": 12,
-                "max_discount_depth": 0.25,
-                "blackout_weeks": [47, 49, 51, 52],
-                "max_display_slots_per_week": 3
-            },
-            "Retailer 0": {
-                "budget_enforcement_level": "Strict",
-                "min_gap_weeks": 4,
-                "max_promo_frequency": 8,
-                "max_discount_depth": 0.40,
-                "blackout_weeks": [44, 25, 51, 52],
-                "max_display_slots_per_week": 3
-            }
-        }
+        # Load constraints from properly formatted JSON file
+        with open(file_path, 'r') as f:
+            constraints = json.load(f)
 
         logger.info(f"Loaded constraints for {len(constraints)} retailers")
+
+        # Log constraints for verification
+        for retailer, rules in constraints.items():
+            logger.debug(f"{retailer}: min_gap={rules['min_gap_weeks']}, "
+                        f"max_freq={rules['max_promo_frequency']}, "
+                        f"blackout={rules['blackout_weeks']}")
 
         return constraints
 

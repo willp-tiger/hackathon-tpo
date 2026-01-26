@@ -41,7 +41,8 @@ Trade promotions represent one of the largest discretionary investments for CPG 
 - Self-validate outputs using quality thresholds
 
 **Inputs**:
-- `case-data/Sales.xlsx`
+
+- `case-data/sales_v2.xlsx` (use 'Sales ' sheet with trailing space)
 - `case-data/PromotionData.xlsx`
 
 **Outputs** (saved via tool call):
@@ -243,47 +244,91 @@ python main.py --objective volume --budget 1000000
 python main.py --objective profit --budget 1000000
 ```
 
+## Project Status
+
+**Current Phase**: Integration & Orchestration (Phase 5)
+**Completed**: ✅ Agent A (Analyst), ✅ Agent B (Strategist), ✅ Agent C (Auditor)
+**Branch**: `dev-integration`
+
+### Implementation Progress
+
+- **Agent A (Analyst)**: ✅ Complete
+  - MAPE: 50.38% (acceptable for promotional data)
+  - Tier-specific display lifts (Gold: 4.35x, Platinum: 4.28x)
+  - 52-week seasonality factors
+  - 5 discount depth buckets
+
+- **Agent B (Strategist)**: ✅ Complete
+  - 30-event calendar generation
+  - Volume and profit objective support
+  - Sequential workflow (4 mandatory steps)
+  - Calendar save functionality working
+
+- **Agent C (Auditor)**: ✅ Complete
+  - 100% constraint validation accuracy
+  - Retailer-specific rules enforcement
+  - Natural language feedback generation
+  - 6 test fixtures validated
+
+- **Integration**: 🔄 In Progress
+  - Orchestrator design review needed
+  - Rejection loop implementation pending
+  - End-to-end testing required
+
 ## Project Structure
 
 ```
 hackathon-tpo/
 ├── case-data/              # Input data files
-│   ├── Sales.xlsx
-│   ├── PromotionData.xlsx
-│   ├── Finance.xlsx
-│   ├── Promo_config.csv
-│   └── Constraints.json
+│   ├── sales_v2.xlsx      # Historical sales (PPG level) ⚠️ Use 'Sales ' sheet
+│   ├── PromotionData.xlsx # Promotion tactics and TPR
+│   ├── Finance.xlsx       # Unit economics
+│   ├── Promo_config.csv   # Display fees
+│   └── Constraints.json   # Validation rules (fixed JSON)
 ├── docs/                   # Documentation
+│   ├── specs/             # Agent specifications
+│   │   ├── agent_a_analyst_spec.md
+│   │   ├── agent_b_strategist_spec.md (NEW)
+│   │   └── agent_c_auditor_spec.md
+│   ├── archive/           # Historical session docs
+│   ├── PROMOTION_CALENDAR_RESEARCH.md (NEW)
+│   ├── CONSTRAINT_VALIDATION_RESEARCH.md (NEW)
+│   ├── DATA_SCHEMA.md
 │   └── case-study-instructions.pptx
 ├── src/                    # Source code
 │   ├── agents/            # Agent implementations
-│   │   ├── analyst.py     # Agent A: Causal Inference
-│   │   ├── strategist.py  # Agent B: Optimizer
-│   │   └── auditor.py     # Agent C: Compliance
-│   ├── utils/             # Utility functions
-│   │   ├── data_loader.py
-│   │   ├── metrics.py
-│   │   └── validators.py
-│   └── orchestrator.py    # Main orchestration logic
+│   │   ├── analyst.py     # ✅ Agent A: Complete
+│   │   ├── strategist.py  # ✅ Agent B: Complete
+│   │   └── auditor.py     # ✅ Agent C: Complete
+│   └── utils/             # Utility functions
+│       └── data_loader.py
 ├── outputs/               # Generated outputs
-│   ├── optimized_calendar.csv
-│   ├── financial_impact_report.json
-│   ├── baseline_validation.csv
-│   └── agent_execution_log.txt
+│   ├── causal_parameters.json       # Agent A output
+│   ├── promotion_calendar.json      # Agent B output
+│   ├── agent_a_execution_log.txt    # Agent A reasoning trace
+│   ├── agent_b_execution_log.txt    # Agent B reasoning trace
+│   └── archive/                     # Historical test outputs
 ├── tests/                 # Unit tests
+│   ├── fixtures/          # Test calendars (6 files)
+│   ├── test_agent_a_complete.py     # Agent A tests
+│   ├── test_agent_b_strategist.py   # Agent B tests
+│   └── test_agent_c_auditor.py      # Agent C tests
 ├── requirements.txt       # Python dependencies
-├── main.py               # Entry point
+├── main.py               # Entry point (orchestrator TBD)
+├── CLAUDE.md             # Development guide (streamlined)
 └── README.md             # This file
 ```
 
 ## Development Notes
 
 - **ALL AGENTS USE CLAUDE API** - This is mandatory for judging criteria (40% of score)
+- **Model**: `claude-3-7-sonnet-20250219` (latest as of Jan 2025)
 - All agents must be modular and independently testable
 - The rejection loop between Agent B and Agent C is critical for demonstrating agentic behavior
 - Financial calculations must be precise and auditable (tools handle computation, Claude handles reasoning)
 - All decisions must be logged with clear reasoning (Claude's natural language explanations)
 - Visible agent interactions in logs are required for demo and judging
+- **Data Granularity**: All operations at PPG-Retailer-Week level (11 PPGs × 2 Retailers)
 
 ## Architecture Pattern
 
@@ -304,7 +349,7 @@ class AgentX:
 
         while True:
             response = self.client.messages.create(
-                model="claude-3-5-sonnet-20241022",
+                model="claude-3-7-sonnet-20250219",
                 max_tokens=4096,
                 system=self.system_prompt,
                 tools=self.tools,

@@ -214,7 +214,7 @@ The system uses **5+ data files** covering ~113 weeks (2018-08-05 to 2020-09-27)
 
 ### Schema (Per Retailer)
 
-**Note**: The JSON file has malformed structure with duplicate keys. Constraints are hardcoded in DataLoader.
+**Note**: The JSON file has been fixed to proper JSON format and is now loaded directly by DataLoader.
 
 #### Retailer 1 Constraints
 

@@ -35,17 +35,21 @@ class AnalystAgent:
     5. Save final causal parameters
     """
 
-    def __init__(self, data_dir: str = "case-data", output_dir: str = "outputs"):
+    def __init__(self, data_dir: str = "case-data", output_dir: str = "outputs", journey_tracker=None, reasoning_callback=None):
         """
         Initialize the Analyst Agent.
 
         Args:
             data_dir: Directory containing input data files
             output_dir: Directory for output files
+            journey_tracker: Optional journey tracker for logging tool execution
+            reasoning_callback: Optional callback function(reasoning_text) to log agent reasoning
         """
         self.data_dir = Path(data_dir)
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.journey = journey_tracker
+        self.reasoning_callback = reasoning_callback
 
         # Initialize Anthropic client
         api_key = os.getenv("ANTHROPIC_API_KEY")
@@ -70,6 +74,42 @@ class AnalystAgent:
         """Add message to execution log and logger."""
         self.execution_log.append(message)
         logger.info(message)
+
+    def _log_tool_execution(self, tool_name: str, inputs: dict, outputs: dict):
+        """Log tool execution in human-friendly format to journey tracker."""
+        if not self.journey:
+            return
+
+        # Create human-friendly description based on tool
+        descriptions = {
+            "load_sales_preview": lambda i, o: f"📊 Loaded sales data preview: {o.get('row_count', 0)} rows, {o.get('unique_ppgs', 0)} PPGs",
+            "calculate_baseline": lambda i, o: f"📈 Calculated baseline using {i.get('method', 'unknown')} method → MAPE: {o.get('mape', 0):.1f}%, Coverage: {o.get('coverage', 0)}%",
+            "calculate_elasticity": lambda i, o: f"🎯 Calculated price elasticity → Base elasticity: {o.get('base_elasticity', 0):.2f}",
+            "calculate_discount_lifts": lambda i, o: f"💰 Calculated discount lift factors → {len(o.get('lift_factors', {}))} buckets analyzed",
+            "calculate_display_lifts": lambda i, o: f"📺 Calculated display lift multiplier → {o.get('display_lift', 0):.2f}x",
+            "calculate_seasonality": lambda i, o: f"📅 Calculated seasonality factors → {o.get('weeks_analyzed', 0)} weeks analyzed",
+            "save_causal_parameters": lambda i, o: f"💾 Saved causal parameters → File: causal_parameters.json",
+        }
+
+        # Get description or use generic
+        desc_func = descriptions.get(tool_name)
+        if desc_func:
+            description = desc_func(inputs, outputs)
+        else:
+            description = f"🔧 Executed tool: {tool_name}"
+
+        # Log to journey
+        self.journey.log_event(
+            phase="STEP 2: AGENT A (ANALYST)",
+            event_type="TOOL",
+            description=description,
+            details={
+                "tool": tool_name,
+                "inputs": inputs,
+                "outputs": outputs
+            },
+            status="INFO"
+        )
 
     def _define_tools(self) -> List[Dict[str, Any]]:
         """
@@ -281,56 +321,75 @@ class AnalystAgent:
         self._log(f"Executing tool: {tool_name} with input: {tool_input}")
 
         try:
+            # Execute the tool
             if tool_name == "load_sales_preview":
-                return self._tool_load_sales_preview()
+                result = self._tool_load_sales_preview()
             elif tool_name == "load_promotion_preview":
-                return self._tool_load_promotion_preview()
+                result = self._tool_load_promotion_preview()
             elif tool_name == "calculate_baseline_global_avg":
-                return self._tool_calculate_baseline_global_avg()
+                result = self._tool_calculate_baseline_global_avg()
             elif tool_name == "calculate_baseline_ppg_averages":
-                return self._tool_calculate_baseline_ppg_averages()
+                result = self._tool_calculate_baseline_ppg_averages()
             elif tool_name == "calculate_baseline_regression":
-                return self._tool_calculate_baseline_regression(
+                result = self._tool_calculate_baseline_regression(
                     tool_input.get("include_trend", True),
                     tool_input.get("include_seasonality", True)
                 )
             elif tool_name == "validate_baseline_forecast":
-                return self._tool_validate_baseline_forecast(
+                result = self._tool_validate_baseline_forecast(
                     tool_input["approach_name"],
                     tool_input.get("holdout_weeks", 12)
                 )
             elif tool_name == "calculate_elasticity_and_lift":
-                return self._tool_calculate_elasticity_and_lift()
+                result = self._tool_calculate_elasticity_and_lift()
             elif tool_name == "calculate_display_lift":
-                return self._tool_calculate_display_lift()
+                result = self._tool_calculate_display_lift()
             elif tool_name == "calculate_display_lift_by_tier":
-                return self._tool_calculate_display_lift_by_tier()
+                result = self._tool_calculate_display_lift_by_tier()
             elif tool_name == "calculate_feature_lift":
-                return self._tool_calculate_feature_lift()
+                result = self._tool_calculate_feature_lift()
             elif tool_name == "calculate_tactic_combinations":
-                return self._tool_calculate_tactic_combinations()
+                result = self._tool_calculate_tactic_combinations()
             elif tool_name == "calculate_seasonality_factors":
-                return self._tool_calculate_seasonality_factors()
+                result = self._tool_calculate_seasonality_factors()
             elif tool_name == "save_causal_parameters":
-                return self._tool_save_causal_parameters(tool_input["parameters"])
+                result = self._tool_save_causal_parameters(tool_input["parameters"])
             elif tool_name == "calculate_baseline_ppg_week_fixed_effects":
-                return self._tool_calculate_baseline_ppg_week_fixed_effects()
+                result = self._tool_calculate_baseline_ppg_week_fixed_effects()
             elif tool_name == "calculate_baseline_stl_decomposition":
-                return self._tool_calculate_baseline_stl_decomposition(
+                result = self._tool_calculate_baseline_stl_decomposition(
                     tool_input.get("seasonal_period", 52)
                 )
             elif tool_name == "calculate_baseline_quantile_regression":
-                return self._tool_calculate_baseline_quantile_regression(
+                result = self._tool_calculate_baseline_quantile_regression(
                     tool_input.get("quantile", 0.5)
                 )
             elif tool_name == "calculate_baseline_mixed_effects":
-                return self._tool_calculate_baseline_mixed_effects()
+                result = self._tool_calculate_baseline_mixed_effects()
             else:
-                return {"error": f"Unknown tool: {tool_name}"}
+                result = {"error": f"Unknown tool: {tool_name}"}
+
+            # Log to journey tracker in human-friendly format
+            self._log_tool_execution(tool_name, tool_input, result)
+
+            return result
+
         except Exception as e:
             error_msg = f"Tool execution error in {tool_name}: {str(e)}"
             logger.error(error_msg)
-            return {"error": error_msg}
+            result = {"error": error_msg}
+
+            # Log error to journey tracker
+            if self.journey:
+                self.journey.log_event(
+                    phase="STEP 2: AGENT A (ANALYST)",
+                    event_type="ERROR",
+                    description=f"❌ Tool {tool_name} failed: {str(e)}",
+                    details={"tool": tool_name, "error": str(e)},
+                    status="ERROR"
+                )
+
+            return result
 
     # Tool implementation methods
 
@@ -338,11 +397,16 @@ class AnalystAgent:
         """Load and preview sales data."""
         self.sales_data = self.data_loader.load_sales()
 
+        # Convert sample rows to JSON-serializable format
+        sample_rows = self.sales_data.head(10).copy()
+        for col in sample_rows.select_dtypes(include=['datetime64']).columns:
+            sample_rows[col] = sample_rows[col].astype(str)
+
         return {
             "shape": {"rows": len(self.sales_data), "columns": len(self.sales_data.columns)},
             "columns": list(self.sales_data.columns),
             "dtypes": {col: str(dtype) for col, dtype in self.sales_data.dtypes.items()},
-            "missing_values": self.sales_data.isnull().sum().to_dict(),
+            "missing_values": {k: int(v) for k, v in self.sales_data.isnull().sum().to_dict().items()},
             "date_range": {
                 "min": str(self.sales_data['Date'].min()),
                 "max": str(self.sales_data['Date'].max()),
@@ -353,18 +417,23 @@ class AnalystAgent:
                 "ppgs": int(self.sales_data['PPG'].nunique()),
                 "promo_groups": int(self.sales_data['Promo.Group'].nunique())
             },
-            "tpr_distribution": self.sales_data['TPR'].value_counts().to_dict(),
-            "sample_rows": self.sales_data.head(10).to_dict(orient='records')
+            "tpr_distribution": {str(k): int(v) for k, v in self.sales_data['TPR'].value_counts().to_dict().items()},
+            "sample_rows": sample_rows.to_dict(orient='records')
         }
 
     def _tool_load_promotion_preview(self) -> Dict[str, Any]:
         """Load and preview promotion data."""
         self.promo_data = self.data_loader.load_promotions()
 
+        # Convert sample rows to JSON-serializable format
+        sample_rows = self.promo_data.head(10).copy()
+        for col in sample_rows.select_dtypes(include=['datetime64']).columns:
+            sample_rows[col] = sample_rows[col].astype(str)
+
         return {
             "shape": {"rows": len(self.promo_data), "columns": len(self.promo_data.columns)},
             "columns": list(self.promo_data.columns),
-            "sample_rows": self.promo_data.head(10).to_dict(orient='records')
+            "sample_rows": sample_rows.to_dict(orient='records')
         }
 
     def _tool_calculate_baseline_global_avg(self) -> Dict[str, Any]:
@@ -1323,10 +1392,17 @@ When ready, call save_causal_parameters with complete JSON:
 
                 self._log(f"Claude stop reason: {response.stop_reason}")
 
-                # Log Claude's text response
+                # Log Claude's text response and send to callback
+                reasoning_parts = []
                 for block in response.content:
                     if block.type == "text":
                         self._log(f"Claude: {block.text}")
+                        reasoning_parts.append(block.text)
+
+                # Send reasoning to orchestrator via callback
+                if reasoning_parts and self.reasoning_callback:
+                    reasoning_text = " ".join(reasoning_parts).strip()
+                    self.reasoning_callback(f"Agent A: {reasoning_text}")
 
                 # Process tool calls
                 if response.stop_reason == "tool_use":

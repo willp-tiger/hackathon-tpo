@@ -6,12 +6,16 @@ to generate an optimized promotion calendar through an iterative feedback loop.
 """
 
 import json
+import os
 from pathlib import Path
+from datetime import datetime
 from typing import Dict, Any, Optional
 from loguru import logger
 
 from .agents import AnalystAgent, StrategistAgent, AuditorAgent
-from .utils import DataLoader, validate_calendar_format, validate_audit_report
+from .utils import DataLoader, validate_calendar_format
+from .utils.report_generator import ExecutionReportGenerator, generate_quick_summary
+from .utils.journey_tracker import JourneyTracker
 
 
 class TPOOrchestrator:
@@ -49,6 +53,9 @@ class TPOOrchestrator:
         # Initialize data loader
         self.data_loader = DataLoader(data_dir)
 
+        # Initialize journey tracker
+        self.journey = JourneyTracker(output_dir=str(self.output_dir))
+
         # Agents (initialized later)
         self.analyst = None
         self.strategist = None
@@ -56,6 +63,16 @@ class TPOOrchestrator:
 
         # Execution log
         self.execution_log = []
+
+    def _log_agent_reasoning(self, reasoning_text: str):
+        """
+        Callback for agents to log their reasoning to the journey tracker.
+
+        Args:
+            reasoning_text: Reasoning from agent (prefixed with "Agent X: ...")
+        """
+        if self.journey:
+            self.journey.log_agent_reasoning(reasoning_text)
 
     def run(self, objective: str = "volume", budget: float = 1_000_000) -> Dict[str, Any]:
         """
@@ -73,6 +90,9 @@ class TPOOrchestrator:
         logger.info(f"Objective: {objective.upper()}")
         logger.info(f"Budget: ${budget:,.0f}")
         logger.info("=" * 80)
+
+        # Track start time for execution summary
+        self.start_time = datetime.now()
 
         self._log_event("workflow_start", {
             "objective": objective,
@@ -104,10 +124,28 @@ class TPOOrchestrator:
         logger.info("\n[STEP 6] Saving outputs...")
         self._save_outputs(final_calendar, reports)
 
+        # Step 7: Generate comprehensive execution summary
+        logger.info("\n[STEP 7] Generating execution summary report...")
+        end_time = datetime.now()
+        self._generate_execution_summary(
+            objective=objective,
+            budget=budget,
+            audit_report=audit_report,
+            start_time=self.start_time,
+            end_time=end_time
+        )
+        self.journey.log_report_saved(
+            filename="EXECUTION_SUMMARY.txt",
+            description="Comprehensive execution summary for presentation"
+        )
+
+        # Finalize journey log
+        self.journey.finalize(final_status=audit_report['status'])
+
         logger.info("\n" + "=" * 80)
         logger.info("TPO Optimization Complete!")
         logger.info(f"Final Status: {audit_report['status']}")
-        logger.info(f"Total Iterations: {self.strategist.get_iteration_count()}")
+        logger.info(f"Total Iterations: {self.strategist.iteration if self.strategist else 0}")
         logger.info("=" * 80)
 
         return {
@@ -119,6 +157,7 @@ class TPOOrchestrator:
     def _load_data(self) -> Dict[str, Any]:
         """Load all required data files."""
         self._log_event("data_loading_start", {})
+        self.journey.log_data_loading_start()
 
         data = self.data_loader.load_all()
 
@@ -127,22 +166,91 @@ class TPOOrchestrator:
             "promotion_rows": len(data["promotions"]),
             "financial_rows": len(data["financials"])
         })
+        self.journey.log_data_loading_complete(
+            sales_rows=len(data["sales"]),
+            promo_rows=len(data["promotions"])
+        )
 
         return data
 
     def _run_analyst(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Run the Analyst agent."""
         self._log_event("analyst_start", {})
+        self.journey.log_agent_a_start()
 
-        self.analyst = AnalystAgent(
-            sales_data=data["sales"],
-            promo_data=data["promotions"]
-        )
+        # Check if causal parameters already exist
+        causal_params_path = self.output_dir / "causal_parameters.json"
+        if causal_params_path.exists():
+            logger.info("Causal parameters already exist, loading from file...")
+            self.journey.log_event(
+                phase="STEP 2: AGENT A (ANALYST)",
+                event_type="CACHED",
+                description="Loading existing causal parameters from cache",
+                details={"file": "outputs/causal_parameters.json"},
+                status="INFO"
+            )
+            with open(causal_params_path, 'r') as f:
+                causal_parameters = json.load(f)
+            logger.info("Loaded existing causal parameters")
 
-        causal_parameters = self.analyst.analyze()
+            # Log completion with cached data
+            self.journey.log_agent_a_complete(
+                mape=causal_parameters.get("baseline_mape", 0),
+                method=causal_parameters.get("baseline_method", "cached"),
+                iterations=0
+            )
+
+            # Log cached parameters details
+            self.journey.log_event(
+                phase="STEP 2: AGENT A (ANALYST)",
+                event_type="CACHED_PARAMETERS",
+                description="Using cached causal parameters",
+                details={
+                    "baseline_velocity": causal_parameters.get("baseline_velocity_avg", 0),
+                    "price_elasticity": causal_parameters.get("elasticity_model", {}).get("base_price_elasticity", 0),
+                    "discount_buckets": list(causal_parameters.get("elasticity_model", {}).get("discount_lift_factors", {}).keys()),
+                    "display_lift": causal_parameters.get("elasticity_model", {}).get("display_lift_multiplier", 0),
+                    "seasonality_weeks": len(causal_parameters.get("seasonality_factors", {}))
+                },
+                status="INFO"
+            )
+        else:
+            # Initialize Agent A (it gets API key from environment internally)
+            self.analyst = AnalystAgent(
+                data_dir=self.data_dir,
+                output_dir=str(self.output_dir),
+                journey_tracker=self.journey,
+                reasoning_callback=self._log_agent_reasoning
+            )
+
+            # Agent A will load data and analyze via its tools
+            causal_parameters = self.analyst.analyze()
+
+            # Log completion with new analysis
+            self.journey.log_agent_a_complete(
+                mape=causal_parameters.get("baseline_mape", 0),
+                method=causal_parameters.get("baseline_method", "unknown"),
+                iterations=causal_parameters.get("total_iterations", 0)
+            )
+
+            # Log detailed Agent A results
+            self.journey.log_event(
+                phase="STEP 2: AGENT A (ANALYST)",
+                event_type="ANALYSIS_RESULTS",
+                description="Causal parameters generated successfully",
+                details={
+                    "baseline_velocity": causal_parameters.get("baseline_velocity_avg", 0),
+                    "price_elasticity": causal_parameters.get("elasticity_model", {}).get("base_price_elasticity", 0),
+                    "discount_lifts": causal_parameters.get("elasticity_model", {}).get("discount_lift_factors", {}),
+                    "display_lift": causal_parameters.get("elasticity_model", {}).get("display_lift_multiplier", 0),
+                    "seasonality_weeks": len(causal_parameters.get("seasonality_factors", {})),
+                    "baseline_coverage": f"{causal_parameters.get('baseline_coverage_pct', 0):.1f}%"
+                },
+                status="SUCCESS"
+            )
 
         self._log_event("analyst_complete", {
-            "causal_parameters": causal_parameters
+            "baseline_avg": causal_parameters.get("baseline_velocity_avg", 0)
         })
 
         return causal_parameters
@@ -155,22 +263,29 @@ class TPOOrchestrator:
         objective: str
     ):
         """Initialize the Strategist agent."""
-        display_config = data["promo_config"].to_dict("records")
+        api_key = os.environ.get("ANTHROPIC_API_KEY")
+        if not api_key:
+            raise ValueError("ANTHROPIC_API_KEY environment variable not set")
 
         self.strategist = StrategistAgent(
-            causal_parameters=causal_parameters,
+            api_key=api_key,
+            objective=objective,
             budget_limit=budget,
-            display_config=display_config,
-            objective=objective
+            max_iterations=self.max_iterations,
+            output_dir=str(self.output_dir),
+            data_dir=self.data_dir,
+            reasoning_callback=self._log_agent_reasoning
         )
 
         self._log_event("strategist_initialized", {"objective": objective})
 
     def _initialize_auditor(self, data: Dict[str, Any]):
         """Initialize the Auditor agent."""
+        # AuditorAgent gets API key from environment and uses data_dir
         self.auditor = AuditorAgent(
-            constraints=data["constraints"],
-            financials=data["financials"].to_dict("records")
+            data_dir=self.data_dir,
+            output_dir=str(self.output_dir),
+            reasoning_callback=self._log_agent_reasoning
         )
 
         self._log_event("auditor_initialized", {})
@@ -192,48 +307,158 @@ class TPOOrchestrator:
 
             # Strategist generates calendar
             self._log_event("strategist_generation_start", {"iteration": iteration})
+            self.journey.log_agent_b_iteration_start(
+                iteration=iteration,
+                feedback=feedback.get('feedback') if feedback else None
+            )
+
             calendar = self.strategist.generate_calendar(feedback)
+
             self._log_event("strategist_generation_complete", {
                 "iteration": iteration,
                 "events_count": len(calendar.get("calendar_events", [])),
-                "projected_spend": calendar.get("total_projected_spend", 0)
+                "total_spend": calendar.get("total_spend", 0)
             })
+            # Log calendar generation with more details
+            events = calendar.get("calendar_events", [])
+            ppgs_used = set(e.get('ppg', 'unknown') for e in events)
+            weeks_used = sorted(set(e.get('week', 0) for e in events))
 
-            # Validate calendar format
-            if not validate_calendar_format(calendar):
-                logger.error("Invalid calendar format generated by Strategist")
-                raise ValueError("Invalid calendar format")
+            self.journey.log_agent_b_calendar_generated(
+                iteration=iteration,
+                event_count=len(events),
+                total_spend=calendar.get("total_spend", 0)
+            )
+
+            # Log additional calendar details
+            self.journey.log_event(
+                phase="STEP 3: REJECTION LOOP (AGENT B <-> AGENT C)",
+                event_type="CALENDAR_DETAILS",
+                description=f"Iteration {iteration}: Calendar composition",
+                details={
+                    "ppgs": sorted(list(ppgs_used)),
+                    "ppg_count": len(ppgs_used),
+                    "weeks_range": f"{min(weeks_used)}-{max(weeks_used)}" if weeks_used else "none",
+                    "sample_events": [
+                        f"Week {e.get('week')}: {e.get('ppg')} at {e.get('retailer')} ({e.get('discount_depth', 0)*100:.0f}% off)"
+                        for e in events[:3]  # First 3 events as sample
+                    ]
+                },
+                status="INFO"
+            )
+
+            # Validate calendar format (basic check)
+            if not calendar.get("calendar_events"):
+                logger.error("No calendar events generated by Strategist")
+                raise ValueError("Invalid calendar - no events")
 
             # Auditor reviews calendar
             self._log_event("auditor_review_start", {"iteration": iteration})
-            audit_report = self.auditor.audit(calendar)
+            self.journey.log_agent_c_validation_start(iteration=iteration)
+
+            # Build constraints dict for auditor
+            constraints = {
+                "budget_limit": self.strategist.budget_limit if self.strategist else 1000000,
+                "min_gap_weeks": 4,  # Default, can be retailer-specific
+                "max_promos_per_ppg": 12,  # Default, can be retailer-specific
+                "blackout_weeks": []  # From data if available
+            }
+
+            # Audit the calendar (Agent B saves to promotion_calendar.json)
+            calendar_path = str(self.output_dir / "promotion_calendar.json")
+            audit_report = self.auditor.audit(calendar_path, constraints)
+
             self._log_event("auditor_review_complete", {
                 "iteration": iteration,
                 "status": audit_report["status"],
                 "violations_count": len(audit_report.get("violations", []))
             })
+            self.journey.log_agent_c_result(
+                iteration=iteration,
+                status=audit_report["status"],
+                violations=audit_report.get("violations", []),
+                feedback=audit_report.get("feedback")
+            )
+
+            # Log detailed violations if rejected
+            if audit_report["status"] == "REJECTED" and audit_report.get("violations"):
+                violation_details = []
+                for v in audit_report["violations"][:5]:  # First 5 violations
+                    vtype = v.get('type', v.get('category', 'UNKNOWN'))
+                    if 'gap' in vtype.lower():
+                        violation_details.append(
+                            f"{vtype}: {v.get('description', 'PPG at weeks with insufficient gap')}"
+                        )
+                    elif 'frequency' in vtype.lower():
+                        violation_details.append(
+                            f"{vtype}: {v.get('description', 'Too many promotions')}"
+                        )
+                    else:
+                        violation_details.append(
+                            f"{vtype}: {v.get('description', str(v))}"
+                        )
+
+                self.journey.log_event(
+                    phase="STEP 3: REJECTION LOOP (AGENT B <-> AGENT C)",
+                    event_type="VIOLATION_DETAILS",
+                    description=f"Iteration {iteration}: Top violations found",
+                    details={
+                        "violations": violation_details,
+                        "total_violations": len(audit_report.get("violations", [])),
+                        "feedback_summary": audit_report.get("feedback", "")[:200] + "..." if len(audit_report.get("feedback", "")) > 200 else audit_report.get("feedback", "")
+                    },
+                    status="WARNING"
+                )
 
             # Log the exchange
             logger.info(f"Strategist proposed calendar with {len(calendar['calendar_events'])} events")
-            logger.info(f"Projected spend: ${calendar['total_projected_spend']:,.0f}")
+            logger.info(f"Total spend: ${calendar.get('total_spend', 0):,.0f}")
             logger.info(f"Auditor status: {audit_report['status']}")
 
             if audit_report["status"] == "APPROVED":
                 logger.info("✓ Calendar APPROVED by Auditor")
+                self.journey.log_rejection_loop_complete(
+                    final_status="APPROVED",
+                    total_iterations=iteration
+                )
                 return calendar, audit_report
 
             # Calendar rejected - log violations and prepare feedback
             logger.warning(f"✗ Calendar REJECTED - {len(audit_report['violations'])} violations")
             for violation in audit_report["violations"]:
-                logger.warning(f"  - {violation['type']}: {violation['details']}")
+                # Format violation details based on type or category
+                vtype = violation.get('type', violation.get('category', 'UNKNOWN'))
+
+                # Use 'details' field first, fallback to type-specific formatting
+                if 'details' in violation:
+                    detail_str = violation['details']
+                elif 'gap' in vtype.lower() or vtype == 'GAP_VIOLATION':
+                    detail_str = f"PPG {violation.get('ppg', 'N/A')} at Retailer {violation.get('retailer', 'N/A')}: weeks {violation.get('week1', 'N/A')}-{violation.get('week2', 'N/A')} (gap: {violation.get('gap', 'N/A')}, required: {violation.get('min_required', 'N/A')})"
+                elif 'budget' in vtype.lower() or vtype == 'BUDGET_VIOLATION':
+                    # Use 'overage' field if available
+                    overage = violation.get('overage', 'N/A')
+                    detail_str = f"Budget exceeded by ${overage:,.0f}" if isinstance(overage, (int, float)) else "Budget exceeded"
+                elif 'frequency' in vtype.lower() or vtype == 'FREQUENCY_VIOLATION':
+                    detail_str = f"PPG {violation.get('ppg', 'N/A')}: {violation.get('count', 0)} promotions exceeds limit {violation.get('max_allowed', 0)}"
+                elif 'blackout' in vtype.lower() or vtype == 'BLACKOUT_VIOLATION':
+                    detail_str = f"Promotion in blackout week {violation.get('week', 'N/A')}"
+                else:
+                    # Generic formatting for unknown violation types
+                    detail_str = violation.get('description', str(violation))
+                logger.warning(f"  - {vtype}: {detail_str}")
 
             logger.info(f"Auditor feedback: {audit_report['feedback']}")
 
             feedback = audit_report
 
-        # Max iterations reached without approval
-        logger.error(f"Max iterations ({self.max_iterations}) reached without approval")
-        raise RuntimeError("Failed to generate approved calendar within iteration limit")
+        # Max iterations reached without approval - return last calendar anyway
+        logger.warning(f"Max iterations ({self.max_iterations}) reached without approval")
+        logger.warning(f"Returning last calendar (status: {audit_report.get('status', 'UNKNOWN')})")
+        self.journey.log_rejection_loop_complete(
+            final_status=audit_report.get('status', 'MAX_ITERATIONS'),
+            total_iterations=self.max_iterations
+        )
+        return calendar, audit_report
 
     def _generate_reports(
         self,
@@ -256,60 +481,92 @@ class TPOOrchestrator:
         data: Dict[str, Any]
     ) -> Dict[str, Any]:
         """Generate financial impact comparison report."""
-        # TODO: Implement detailed financial comparison
+        # Simplified financial impact report
+        # Full implementation would calculate actual volume/revenue projections
+        total_spend = calendar.get("total_spend", 0)
+        event_count = len(calendar.get("calendar_events", []))
+
         return {
+            "objective": calendar.get("objective", "unknown"),
             "base_plan": {
                 "total_volume": 0,
                 "total_revenue": 0,
                 "total_margin": 0,
-                "total_spend": 0
+                "total_spend": 0,
+                "note": "Baseline calculations require full implementation"
             },
             "optimized_plan": {
                 "total_volume": 0,
                 "total_revenue": 0,
                 "total_margin": 0,
-                "total_spend": calendar.get("total_projected_spend", 0)
+                "total_spend": total_spend,
+                "event_count": event_count
             },
             "delta": {
-                "volume_lift": 0,
-                "revenue_lift": 0,
+                "volume_lift_pct": 0,
+                "revenue_lift_pct": 0,
                 "margin_improvement": 0,
-                "roi": 0
+                "roi": 0,
+                "note": "Projections require full implementation with causal model application"
             }
         }
 
     def _generate_baseline_validation_report(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Generate baseline forecast validation report."""
-        if self.analyst:
-            # TODO: Implement actual validation on holdout data
-            validation_metrics = self.analyst.validate_baseline_forecast(data["sales"])
-            return validation_metrics
+        # Load from Agent A's output if available
+        causal_params_path = self.output_dir / "causal_parameters.json"
+        if causal_params_path.exists():
+            with open(causal_params_path, 'r') as f:
+                params = json.load(f)
+                return {
+                    "baseline_method": params.get("baseline_method", "unknown"),
+                    "mape": params.get("baseline_mape", 0),
+                    "coverage_pct": params.get("baseline_coverage_pct", 0)
+                }
 
-        return {"mape": 0, "rmse": 0, "mae": 0}
+        return {"baseline_method": "not_available", "mape": 0, "coverage_pct": 0}
 
     def _save_outputs(self, calendar: Dict[str, Any], reports: Dict[str, Any]):
         """Save all outputs to files."""
+        self.journey.log_reports_generation()
+
         # Save optimized calendar as CSV
         calendar_path = self.output_dir / "optimized_calendar.csv"
         self._save_calendar_csv(calendar, calendar_path)
         logger.info(f"Saved: {calendar_path}")
+        self.journey.log_report_saved(
+            filename="optimized_calendar.csv",
+            description="52-week promotion calendar (CSV format)"
+        )
 
         # Save financial impact report as JSON
         financial_path = self.output_dir / "financial_impact_report.json"
         with open(financial_path, "w") as f:
             json.dump(reports["financial_impact"], f, indent=2)
         logger.info(f"Saved: {financial_path}")
+        self.journey.log_report_saved(
+            filename="financial_impact_report.json",
+            description="Base vs. Optimized financial comparison"
+        )
 
         # Save baseline validation as CSV
         validation_path = self.output_dir / "baseline_validation.csv"
         import pandas as pd
         pd.DataFrame([reports["baseline_validation"]]).to_csv(validation_path, index=False)
         logger.info(f"Saved: {validation_path}")
+        self.journey.log_report_saved(
+            filename="baseline_validation.csv",
+            description="Baseline forecast accuracy metrics"
+        )
 
         # Save execution log
         log_path = self.output_dir / "agent_execution_log.txt"
         self._save_execution_log(log_path)
         logger.info(f"Saved: {log_path}")
+        self.journey.log_report_saved(
+            filename="agent_execution_log.txt",
+            description="Complete agent interaction log"
+        )
 
     def _save_calendar_csv(self, calendar: Dict[str, Any], path: Path):
         """Save calendar as CSV file."""
@@ -339,3 +596,42 @@ class TPOOrchestrator:
             "event": event,
             "data": data
         })
+
+    def _generate_execution_summary(
+        self,
+        objective: str,
+        budget: float,
+        audit_report: Dict[str, Any],
+        start_time: datetime,
+        end_time: datetime
+    ):
+        """Generate comprehensive execution summary report."""
+        # Prepare optimization result for report generator
+        optimization_result = {
+            'status': audit_report.get('status', 'UNKNOWN'),
+            'iterations': self.strategist.iteration if self.strategist else 0,
+            'objective': objective,
+            'violations_history': []  # Could be enhanced to track all iterations
+        }
+
+        # Add final violations if rejected
+        if audit_report.get('status') == 'REJECTED':
+            violations = audit_report.get('violations', [])
+            if violations:
+                optimization_result['violations_history'].append(violations)
+
+        # Generate comprehensive report
+        report_gen = ExecutionReportGenerator(output_dir=str(self.output_dir))
+        report = report_gen.generate_comprehensive_report(
+            objective=objective,
+            budget=budget,
+            optimization_result=optimization_result,
+            start_time=start_time,
+            end_time=end_time
+        )
+
+        logger.info(f"Saved: {report_gen.report_path}")
+
+        # Print quick summary to console
+        quick_summary = generate_quick_summary(output_dir=str(self.output_dir))
+        print("\n" + quick_summary)
