@@ -685,10 +685,14 @@ You MUST complete step 4 - calling save_promotion_calendar is mandatory."""
 
         # Extract causal parameters
         baseline_velocity = self.causal_parameters.get("baseline_velocity_avg", 0)
-        elasticity_model = self.causal_parameters.get("elasticity_model", {})
-        discount_lifts = elasticity_model.get("discount_lift_factors", {})
-        display_lift_multiplier = elasticity_model.get("display_lift_multiplier", 1.0)
+        tactic_effects = self.causal_parameters.get("tactic_combination_effects", {})
         seasonality_factors = self.causal_parameters.get("seasonality_factors", {})
+
+        # Get actual lift values from tactic combinations (more accurate than multiplicative model)
+        tpr_only_volume = tactic_effects.get("tpr_only", baseline_velocity * 1.45)
+        tpr_plus_display_volume = tactic_effects.get("tpr_plus_display", baseline_velocity * 5.76)
+        tpr_plus_feature_volume = tactic_effects.get("tpr_plus_feature", baseline_velocity * 2.19)
+        tpr_plus_both_volume = tactic_effects.get("tpr_plus_both", baseline_velocity * 2.98)
 
         total_incremental_volume = 0
         total_baseline_volume = 0
@@ -699,6 +703,7 @@ You MUST complete step 4 - calling save_promotion_calendar is mandatory."""
             week = event.get("week")
             discount_depth = event.get("discount_depth", 0)
             display_active = event.get("display_active", False)
+            feature_active = event.get("feature_active", False)
             ppg = event.get("ppg")
             retailer = event.get("retailer")
             display_tier = event.get("display_tier", "none")
@@ -706,26 +711,26 @@ You MUST complete step 4 - calling save_promotion_calendar is mandatory."""
             # Get seasonality factor
             seasonality = seasonality_factors.get(str(week), 1.0)
 
-            # Get discount lift based on depth bucket
-            discount_pct = discount_depth * 100
-            if discount_pct < 15:
-                lift = discount_lifts.get("0-15", 1.5)
-            elif discount_pct < 25:
-                lift = discount_lifts.get("15-25", 2.0)
-            elif discount_pct < 35:
-                lift = discount_lifts.get("25-35", 2.5)
-            elif discount_pct < 45:
-                lift = discount_lifts.get("35-45", 3.5)
-            else:
-                lift = discount_lifts.get("45+", 4.0)
-
             # Calculate baseline for this week
             week_baseline = baseline_velocity * seasonality
 
-            # Apply lifts
-            promo_volume = week_baseline * lift
-            if display_active:
-                promo_volume *= display_lift_multiplier
+            # Use tactic combination effects (empirical data) instead of multiplicative model
+            # This avoids unrealistic lift compounding
+            has_display = display_active or (display_tier and display_tier.lower() != "none")
+            has_feature = feature_active
+
+            if has_display and has_feature:
+                # TPR + Display + Feature
+                promo_volume = week_baseline * (tpr_plus_both_volume / baseline_velocity)
+            elif has_display:
+                # TPR + Display only
+                promo_volume = week_baseline * (tpr_plus_display_volume / baseline_velocity)
+            elif has_feature:
+                # TPR + Feature only
+                promo_volume = week_baseline * (tpr_plus_feature_volume / baseline_velocity)
+            else:
+                # TPR only
+                promo_volume = week_baseline * (tpr_only_volume / baseline_velocity)
 
             # Incremental volume
             incremental_volume = promo_volume - week_baseline
