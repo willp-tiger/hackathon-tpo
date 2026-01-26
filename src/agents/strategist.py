@@ -67,10 +67,12 @@ class StrategistAgent:
         from src.utils import DataLoader
         loader = DataLoader(data_dir)
 
+        self.sales_data = loader.load_sales()
         self.finance_data = loader.load_financials()
         self.promo_config = loader.load_promo_config()
 
         logger.info(f"Initialized StrategistAgent: objective={self.objective}, budget=${budget_limit:,.0f}")
+        logger.info(f"Loaded sales data: {len(self.sales_data)} rows")
         logger.info(f"Loaded finance data: {len(self.finance_data)} PPGs")
         logger.info(f"Loaded promo config: {len(self.promo_config)} tiers")
 
@@ -84,30 +86,29 @@ class StrategistAgent:
 
     def _get_unit_price(self, ppg: str) -> float:
         """
-        Get unit price for PPG from Finance.xlsx.
+        Get average unit price for PPG from sales_v2.xlsx.
 
-        Note: Finance.xlsx has PPG names with APN suffixes (e.g., "Brand_Group_APN")
-        but Sales data uses just "Brand_Group". We match on prefix.
+        Uses actual transaction prices from historical sales data.
 
         Args:
-            ppg: Product group identifier (from Sales data, without APN)
+            ppg: Product group identifier (e.g., "Brand 5_Promo.Group 6")
 
         Returns:
-            Unit price (List Price column), averaged if multiple APNs exist
+            Average unit price from sales transactions
         """
-        if self.finance_data is None:
-            raise ValueError("Finance data not loaded - cannot calculate TPR costs")
+        if self.sales_data is None:
+            raise ValueError("Sales data not loaded - cannot calculate TPR costs")
 
-        # Match PPGs by prefix (Finance has "Brand_Group_APN", Sales has "Brand_Group")
-        ppg_finance = self.finance_data[self.finance_data["PPG"].str.startswith(ppg + "_", na=False)]
+        # Filter sales data for this PPG
+        ppg_sales = self.sales_data[self.sales_data["PPG"] == ppg]
 
-        if ppg_finance.empty:
-            logger.warning(f"PPG '{ppg}' not found in Finance.xlsx - using default price $10.00")
-            return 10.0
+        if ppg_sales.empty:
+            logger.warning(f"PPG '{ppg}' not found in sales data - using default price $2.50")
+            return 2.50
 
-        # Average price across all APNs for this PPG
-        unit_price = ppg_finance["List Price"].mean()
-        logger.debug(f"PPG '{ppg}': {len(ppg_finance)} APNs found, avg price ${unit_price:.2f}")
+        # Average unit price across all transactions for this PPG
+        unit_price = ppg_sales["Unit Price"].mean()
+        logger.debug(f"PPG '{ppg}': {len(ppg_sales)} sales records, avg price ${unit_price:.2f}")
         return unit_price
 
     def _get_display_cost(self, display_tier: str) -> float:
