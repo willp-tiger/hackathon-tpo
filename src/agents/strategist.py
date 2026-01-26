@@ -182,6 +182,114 @@ class StrategistAgent:
         logger.debug(f"PPG '{ppg}' at '{retailer}': {len(ppg_finance)} APNs found, avg margin {unit_margin:.2%}")
         return unit_margin
 
+    def _select_optimal_display_tier(self, ppg: str, baseline_velocity: float, unit_price: float, objective: str, budget_remaining: float = float('inf')) -> str:
+        """
+        Select optimal display tier based on ROI calculation.
+
+        For each tier, calculates:
+        - Incremental units from display (using tier-specific lift from Agent A)
+        - Incremental revenue = incremental units × price
+        - Display cost (from Promo_config.csv)
+        - ROI = (Incremental Revenue - Display Cost) / Display Cost
+
+        Args:
+            ppg: Product group identifier
+            baseline_velocity: Baseline units per week
+            unit_price: Unit price for this PPG
+            objective: 'volume' or 'profit'
+
+        Returns:
+            Optimal tier name (platinum, gold, silver, bronze, or none)
+        """
+        if not self.causal_parameters:
+            # Fallback to hardcoded if causal params not loaded
+            return "gold" if objective == "volume" else "silver"
+
+        tier_lifts = self.causal_parameters.get("tier_specific_display_lifts", {})
+
+        if not tier_lifts:
+            # Fallback if no tier data
+            return "gold" if objective == "volume" else "silver"
+
+        # Display tier costs (from Promo_config.csv)
+        tier_costs = {
+            "platinum": 500,
+            "gold": 400,
+            "silver": 350,
+            "bronze": 300,
+            "none": 0
+        }
+
+        best_tier = "gold"  # Default
+        best_roi = -float('inf')
+
+        # Get TPR-only baseline for comparison
+        tpr_only_volume = self.causal_parameters.get("tactic_combination_effects", {}).get("tpr_only", baseline_velocity * 1.45)
+
+        # Create a ranked list of tiers by score
+        tier_scores = []
+
+        for tier in ["platinum", "gold", "silver", "bronze"]:
+            # Get tier-specific lift (these are lifts comparing TPR+Display(tier) vs TPR-only)
+            tier_lift = tier_lifts.get(f"{tier}_lift", 1.0)
+
+            # Calculate volume with this tier: TPR-only × tier_lift
+            # The tier_lift from Agent A is already relative to TPR-only baseline
+            tier_volume = tpr_only_volume * tier_lift
+
+            # Incremental from this specific tier = tier_volume - tpr_only
+            incremental_units = tier_volume - tpr_only_volume
+
+            # Incremental revenue
+            incremental_revenue = incremental_units * unit_price
+
+            # Display cost
+            display_cost = tier_costs.get(tier, 0)
+
+            # Calculate ROI: (Revenue - Cost) / Cost
+            if display_cost > 0:
+                roi = (incremental_revenue - display_cost) / display_cost
+            else:
+                roi = 0
+
+            # For volume: maximize incremental units
+            # For profit: maximize ROI
+            if objective == "volume":
+                score = incremental_units  # Prioritize volume
+            else:
+                score = roi  # Prioritize ROI
+
+            tier_scores.append({
+                'tier': tier,
+                'score': score,
+                'cost': display_cost,
+                'roi': roi,
+                'incremental_units': incremental_units
+            })
+
+        # Sort by score (descending)
+        tier_scores.sort(key=lambda x: x['score'], reverse=True)
+
+        # Select best tier that fits budget
+        selected = False
+        for tier_info in tier_scores:
+            if tier_info['cost'] <= budget_remaining:
+                best_tier = tier_info['tier']
+                best_roi = tier_info['score']
+                selected = True
+                break
+
+        # If no tier fits budget, select cheapest tier or no display
+        if not selected:
+            tier_scores.sort(key=lambda x: x['cost'])  # Sort by cost ascending
+            if tier_scores and tier_scores[0]['cost'] <= budget_remaining:
+                best_tier = tier_scores[0]['tier']
+            else:
+                best_tier = "none"  # No budget for any display
+
+        logger.debug(f"Selected {best_tier} display for {ppg} (objective={objective}, score={best_roi:.2f if selected else 0})")
+        return best_tier
+
     def generate_calendar(self, feedback: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Main orchestration method: Generate optimized promotion calendar.
@@ -491,16 +599,24 @@ You MUST complete step 4 - calling save_promotion_calendar is mandatory."""
                     # Choose tactics based on objective
                     if objective == "volume":
                         discount_depth = 0.35  # Deeper discount for volume
-                        display_tier = "gold"
                     else:
                         discount_depth = 0.25  # Moderate discount for profit
-                        display_tier = "silver"
 
                     # Calculate actual cost using real data
                     # TPR cost = baseline_units × discount_depth × unit_price
                     baseline_velocity = self.causal_parameters.get("baseline_velocity_avg", 0)
                     unit_price = self._get_unit_price(ppg)
                     tpr_cost = baseline_velocity * discount_depth * unit_price
+
+                    # Select optimal display tier based on ROI and budget
+                    budget_remaining = target_spend - total_spend
+                    display_tier = self._select_optimal_display_tier(
+                        ppg=ppg,
+                        baseline_velocity=baseline_velocity,
+                        unit_price=unit_price,
+                        objective=objective,
+                        budget_remaining=budget_remaining
+                    )
 
                     # Display cost from promo config
                     display_cost = self._get_display_cost(display_tier)
