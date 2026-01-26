@@ -32,17 +32,19 @@ class AuditorAgent:
     5. Generate actionable feedback and save audit report
     """
 
-    def __init__(self, data_dir: str = "case-data", output_dir: str = "outputs"):
+    def __init__(self, data_dir: str = "case-data", output_dir: str = "outputs", reasoning_callback=None):
         """
         Initialize the Auditor Agent.
 
         Args:
             data_dir: Directory containing input data files
             output_dir: Directory for output files
+            reasoning_callback: Optional callback function(reasoning_text) to log agent reasoning
         """
         self.data_dir = Path(data_dir)
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.reasoning_callback = reasoning_callback
 
         # Initialize Anthropic client
         api_key = os.getenv("ANTHROPIC_API_KEY")
@@ -208,10 +210,13 @@ class AuditorAgent:
         total_display_cost = 0.0
         breakdown_by_ppg = defaultdict(float)
 
-        # Get baseline velocity (if available)
-        baseline_velocity = 3014.94  # Default fallback
-        if self.causal_parameters and "baseline_velocity_avg" in self.causal_parameters:
-            baseline_velocity = self.causal_parameters["baseline_velocity_avg"]
+        # Get baseline velocity (required for cost calculations)
+        if not self.causal_parameters or "baseline_velocity_avg" not in self.causal_parameters:
+            return {
+                "status": "ERROR",
+                "error": "Baseline velocity not found in causal parameters - cannot calculate costs"
+            }
+        baseline_velocity = self.causal_parameters["baseline_velocity_avg"]
 
         for event in events:
             ppg = event["ppg"]
@@ -220,11 +225,16 @@ class AuditorAgent:
             display_active = event.get("display_active", False)
 
             # Get unit price from finance data
+            # Note: Finance has "Brand_Group_APN" format, Sales has "Brand_Group" format
             unit_price = 10.0  # Default fallback
             if self.finance_data is not None:
-                ppg_finance = self.finance_data[self.finance_data["PPG"] == ppg]
+                # Match by prefix since Finance has APN suffixes
+                ppg_finance = self.finance_data[self.finance_data["PPG"].str.startswith(ppg + "_", na=False)]
                 if not ppg_finance.empty:
-                    unit_price = ppg_finance.iloc[0]["List Price"]
+                    # Average across all APNs for this PPG
+                    unit_price = ppg_finance["List Price"].mean()
+                else:
+                    logger.warning(f"PPG '{ppg}' not found in Finance.xlsx - using default price $10.00")
 
             # Calculate TPR cost = baseline_units * discount_depth * unit_price
             tpr_cost = baseline_velocity * discount_depth * unit_price
@@ -234,10 +244,18 @@ class AuditorAgent:
             display_cost = 0.0
             if display_active and display_tier.lower() != "none":
                 # Get display fee from promo config
+                # Promo_config has "Promo Type" column like "display_gold  ( per week)"
                 if self.promo_config is not None:
-                    tier_col = f"display_{display_tier.lower()}"
-                    if tier_col in self.promo_config.columns:
-                        display_cost = self.promo_config[tier_col].iloc[0]
+                    tier_pattern = f"display_{display_tier.lower()}"
+                    matching_rows = self.promo_config[
+                        self.promo_config["Promo Type"].str.contains(tier_pattern, case=False, na=False)
+                    ]
+                    if not matching_rows.empty:
+                        cost_str = str(matching_rows.iloc[0]["fixed Spend (USD)"]).strip()
+                        try:
+                            display_cost = float(cost_str)
+                        except ValueError:
+                            logger.warning(f"Invalid display cost format: '{cost_str}'")
                 total_display_cost += display_cost
 
             # Track by PPG
@@ -640,10 +658,17 @@ IMPORTANT: Execute ALL 4 validation tools before making final decision. Do not s
                 messages=messages
             )
 
-            # Log Claude's response
+            # Log Claude's response and send to callback
+            reasoning_parts = []
             for block in response.content:
                 if hasattr(block, 'text'):
                     self._log(f"Claude: {block.text}")
+                    reasoning_parts.append(block.text)
+
+            # Send reasoning to orchestrator via callback
+            if reasoning_parts and self.reasoning_callback:
+                reasoning_text = " ".join(reasoning_parts).strip()
+                self.reasoning_callback(f"Agent C: {reasoning_text}")
 
             # Process response
             if response.stop_reason == "tool_use":

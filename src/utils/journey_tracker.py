@@ -116,27 +116,75 @@ class JourneyTracker:
             # Event line
             f.write(f"{status_icon} [{timestamp_str} | +{elapsed_str}] {event['description']}\n")
 
-            # Details (if any)
+            # Details (if any) - format as ASCII table when possible
             if event['details']:
-                for key, value in event['details'].items():
-                    # Format value nicely
-                    if isinstance(value, (int, float)):
-                        if isinstance(value, float) and value > 1000:
-                            value_str = f"{value:,.2f}"
-                        elif isinstance(value, float):
-                            value_str = f"{value:.4f}"
-                        else:
-                            value_str = str(value)
-                    elif isinstance(value, dict):
-                        value_str = json.dumps(value, indent=2)
-                    elif isinstance(value, list) and len(value) > 5:
-                        value_str = f"[{len(value)} items]"
-                    else:
-                        value_str = str(value)
-
-                    f.write(f"    {key}: {value_str}\n")
+                details_text = self._format_details_as_table(event['details'])
+                if details_text:
+                    f.write(details_text)
 
             f.write("\n")
+
+    def _format_details_as_table(self, details: Dict[str, Any]) -> str:
+        """Format details as compact horizontal key-value pairs."""
+        items = []
+
+        for key, value in details.items():
+            # Skip None or empty values
+            if value is None:
+                continue
+
+            # Format value based on type
+            if isinstance(value, (int, float)):
+                if isinstance(value, float) and value > 1000:
+                    value_str = f"{value:,.1f}"
+                elif isinstance(value, float):
+                    value_str = f"{value:.2f}"
+                else:
+                    value_str = f"{value:,}"
+                items.append(f"{key}={value_str}")
+
+            elif isinstance(value, dict):
+                # Format nested dict as inline key=value pairs
+                dict_items = []
+                for sub_key, sub_value in value.items():
+                    if isinstance(sub_value, (int, float)):
+                        if isinstance(sub_value, float):
+                            dict_items.append(f"{sub_key}={sub_value:.2f}")
+                        else:
+                            dict_items.append(f"{sub_key}={sub_value:,}")
+                    else:
+                        sub_str = str(sub_value)
+                        if len(sub_str) < 20:
+                            dict_items.append(f"{sub_key}={sub_str}")
+
+                if dict_items:
+                    # Put dict items on same line with parent key
+                    items.append(f"{key}[{', '.join(dict_items[:4])}]")
+
+            elif isinstance(value, list):
+                if len(value) == 0:
+                    continue
+                elif len(value) <= 3:
+                    list_str = ', '.join([str(v)[:15] for v in value])
+                    items.append(f"{key}=[{list_str}]")
+                else:
+                    items.append(f"{key}=[{len(value)} items]")
+
+            else:
+                value_str = str(value)
+                if len(value_str) < 30:
+                    items.append(f"{key}={value_str}")
+
+        if not items:
+            return ''
+
+        # Pack items horizontally (3 per line for compact display)
+        output_lines = []
+        for i in range(0, len(items), 3):
+            batch = items[i:i+3]
+            output_lines.append("    " + " | ".join(batch))
+
+        return '\n'.join(output_lines) + '\n' if output_lines else ''
 
     def _is_new_phase(self, phase: str) -> bool:
         """Check if this is a new phase (for headers)."""
@@ -317,6 +365,49 @@ class JourneyTracker:
             description=f"Saved: {filename}",
             details={"filename": filename, "description": description},
             status="SUCCESS"
+        )
+
+    def log_agent_reasoning(self, reasoning_text: str):
+        """
+        Log agent reasoning (Claude's thought process).
+
+        This captures the natural language explanations Claude provides
+        during its decision-making process.
+
+        Args:
+            reasoning_text: The reasoning text from Claude (prefixed with agent name)
+        """
+        # Extract agent name and reasoning
+        if reasoning_text.startswith("Agent A:"):
+            phase = "STEP 2: AGENT A (ANALYST)"
+            agent = "Agent A"
+            reasoning = reasoning_text[9:].strip()  # Remove "Agent A: "
+        elif reasoning_text.startswith("Agent B:"):
+            phase = "STEP 3: REJECTION LOOP (AGENT B <-> AGENT C)"
+            agent = "Agent B"
+            reasoning = reasoning_text[9:].strip()
+        elif reasoning_text.startswith("Agent C:"):
+            phase = "STEP 3: REJECTION LOOP (AGENT B <-> AGENT C)"
+            agent = "Agent C"
+            reasoning = reasoning_text[9:].strip()
+        else:
+            phase = "UNKNOWN"
+            agent = "Unknown"
+            reasoning = reasoning_text
+
+        # Truncate very long reasoning for readability
+        max_length = 500
+        if len(reasoning) > max_length:
+            reasoning_display = reasoning[:max_length] + "..."
+        else:
+            reasoning_display = reasoning
+
+        self.log_event(
+            phase=phase,
+            event_type="AGENT_REASONING",
+            description=f"{agent} reasoning: {reasoning_display}",
+            details={"agent": agent, "reasoning_full": reasoning},
+            status="INFO"
         )
 
     def finalize(self, final_status: str):

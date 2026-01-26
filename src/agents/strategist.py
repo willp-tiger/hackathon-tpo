@@ -34,7 +34,10 @@ class StrategistAgent:
         api_key: str,
         objective: str,
         budget_limit: float,
-        max_iterations: int = 10
+        max_iterations: int = 10,
+        output_dir: str = "outputs",
+        data_dir: str = "case-data",
+        reasoning_callback=None
     ):
         """
         Initialize the Strategist Agent.
@@ -44,15 +47,32 @@ class StrategistAgent:
             objective: Optimization objective ('volume' or 'profit')
             budget_limit: Maximum promotional spend in dollars
             max_iterations: Maximum rejection loop iterations (default: 10)
+            output_dir: Directory for output files (default: "outputs")
+            data_dir: Directory containing input data files (default: "case-data")
+            reasoning_callback: Optional callback function(reasoning_text) to log agent reasoning
         """
         self.client = Anthropic(api_key=api_key)
         self.objective = objective.lower()
         self.budget_limit = budget_limit
         self.max_iterations = max_iterations
+        self.output_dir = output_dir
+        self.data_dir = data_dir
+        self.reasoning_callback = reasoning_callback
 
         # Validate objective
         if self.objective not in ['volume', 'profit']:
             raise ValueError(f"Invalid objective: {objective}. Must be 'volume' or 'profit'")
+
+        # Load required data for cost calculations
+        from src.utils import DataLoader
+        loader = DataLoader(data_dir)
+
+        self.finance_data = loader.load_financials()
+        self.promo_config = loader.load_promo_config()
+
+        logger.info(f"Initialized StrategistAgent: objective={self.objective}, budget=${budget_limit:,.0f}")
+        logger.info(f"Loaded finance data: {len(self.finance_data)} PPGs")
+        logger.info(f"Loaded promo config: {len(self.promo_config)} tiers")
 
         # State
         self.causal_parameters = None
@@ -62,7 +82,74 @@ class StrategistAgent:
         # Execution log
         self.execution_log = []
 
-        logger.info(f"Initialized StrategistAgent: objective={self.objective}, budget=${budget_limit:,.0f}")
+    def _get_unit_price(self, ppg: str) -> float:
+        """
+        Get unit price for PPG from Finance.xlsx.
+
+        Note: Finance.xlsx has PPG names with APN suffixes (e.g., "Brand_Group_APN")
+        but Sales data uses just "Brand_Group". We match on prefix.
+
+        Args:
+            ppg: Product group identifier (from Sales data, without APN)
+
+        Returns:
+            Unit price (List Price column), averaged if multiple APNs exist
+        """
+        if self.finance_data is None:
+            raise ValueError("Finance data not loaded - cannot calculate TPR costs")
+
+        # Match PPGs by prefix (Finance has "Brand_Group_APN", Sales has "Brand_Group")
+        ppg_finance = self.finance_data[self.finance_data["PPG"].str.startswith(ppg + "_", na=False)]
+
+        if ppg_finance.empty:
+            logger.warning(f"PPG '{ppg}' not found in Finance.xlsx - using default price $10.00")
+            return 10.0
+
+        # Average price across all APNs for this PPG
+        unit_price = ppg_finance["List Price"].mean()
+        logger.debug(f"PPG '{ppg}': {len(ppg_finance)} APNs found, avg price ${unit_price:.2f}")
+        return unit_price
+
+    def _get_display_cost(self, display_tier: str) -> float:
+        """
+        Get display cost from Promo_config.csv.
+
+        Promo_config.csv structure:
+        - Column 1: "Promo Type" (e.g., "display_gold  ( per week)")
+        - Column 2: "fixed Spend (USD)" (e.g., "400")
+
+        Args:
+            display_tier: Display tier (bronze, silver, gold, platinum, or none)
+
+        Returns:
+            Display cost in dollars per week
+        """
+        if display_tier is None or display_tier.lower() == "none":
+            return 0.0
+
+        if self.promo_config is None:
+            logger.warning("Promo config not loaded - using default display cost $0")
+            return 0.0
+
+        # Match tier in "Promo Type" column (e.g., "display_gold  ( per week)")
+        tier_pattern = f"display_{display_tier.lower()}"
+        matching_rows = self.promo_config[
+            self.promo_config["Promo Type"].str.contains(tier_pattern, case=False, na=False)
+        ]
+
+        if matching_rows.empty:
+            logger.warning(f"Display tier '{display_tier}' not found in promo config - using $0")
+            return 0.0
+
+        # Extract cost (handle potential string formatting)
+        cost_str = str(matching_rows.iloc[0]["fixed Spend (USD)"]).strip()
+        try:
+            display_cost = float(cost_str)
+            logger.debug(f"Display tier '{display_tier}': ${display_cost}")
+            return display_cost
+        except ValueError:
+            logger.warning(f"Invalid display cost format: '{cost_str}' - using $0")
+            return 0.0
 
     def generate_calendar(self, feedback: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
@@ -99,7 +186,7 @@ Violations: {len(feedback.get('violations', []))}
 Auditor's Guidance: {feedback.get('feedback', 'Fix the violations above')}
 
 Your task:
-1. Load the current calendar from outputs/promotion_calendar.json
+1. Load the current calendar (already saved to {self.output_dir}/promotion_calendar.json)
 2. Call adjust_calendar_for_violations to fix the specific violations
 3. Calculate projected impact for the adjusted calendar
 4. Save the corrected calendar
@@ -139,6 +226,11 @@ You MUST complete step 4 - calling save_promotion_calendar is mandatory."""
 
             # Log the response
             self._log_interaction(messages[-1], response)
+
+            # Extract and log Claude's reasoning (text before tool use)
+            reasoning_text = self._extract_reasoning(response.content)
+            if reasoning_text and self.reasoning_callback:
+                self.reasoning_callback(f"Agent B: {reasoning_text}")
 
             # Process response
             if response.stop_reason == "tool_use":
@@ -229,16 +321,20 @@ You MUST complete step 4 - calling save_promotion_calendar is mandatory."""
 
         return tool_results
 
-    def _load_causal_parameters(self, file_path: str = "outputs/causal_parameters.json") -> Dict[str, Any]:
+    def _load_causal_parameters(self, file_path: str = None) -> Dict[str, Any]:
         """
         Tool 1: Load causal parameters from Agent A.
 
         Args:
-            file_path: Path to causal parameters JSON
+            file_path: Path to causal parameters JSON (optional, defaults to output_dir/causal_parameters.json)
 
         Returns:
             Dict with status and parameters
         """
+        # Use output_dir if no path specified (supports run-specific directories)
+        if file_path is None:
+            file_path = f"{self.output_dir}/causal_parameters.json"
+
         try:
             with open(file_path, 'r') as f:
                 params = json.load(f)
@@ -333,14 +429,33 @@ You MUST complete step 4 - calling save_promotion_calendar is mandatory."""
 
         retailers = ["Retailer 0", "Retailer 1"]
 
+        # Track last week scheduled per PPG-Retailer to enforce gap constraint
+        from collections import defaultdict
+        last_week_scheduled = defaultdict(lambda: -10)  # Start at -10 so first event is always valid
+
+        # Generate events with constraint awareness
+        MIN_GAP_WEEKS = 4  # Minimum weeks between promotions for same PPG-Retailer
+
         for ppg in ppgs:
             for retailer in retailers:
-                # Add a few promotions per PPG-Retailer
-                count = 4 if retailer == "Retailer 0" else 6
+                # Target events per PPG-Retailer based on retailer capacity
+                target_events = 4 if retailer == "Retailer 0" else 6
+                events_added = 0
 
-                for i, (week, season_factor) in enumerate(weeks_ranked[:count]):
+                # Iterate through weeks in seasonality order
+                for week, season_factor in weeks_ranked:
                     if total_spend >= target_spend:
                         break
+
+                    if events_added >= target_events:
+                        break
+
+                    # Check gap constraint: has it been at least MIN_GAP_WEEKS since last promo?
+                    key = (ppg, retailer)
+                    weeks_since_last = week - last_week_scheduled[key]
+
+                    if weeks_since_last < MIN_GAP_WEEKS:
+                        continue  # Skip this week, too close to last promotion
 
                     # Choose tactics based on objective
                     if objective == "volume":
@@ -350,12 +465,22 @@ You MUST complete step 4 - calling save_promotion_calendar is mandatory."""
                         discount_depth = 0.25  # Moderate discount for profit
                         display_tier = "silver"
 
-                    # Estimate cost (simplified)
-                    promo_cost = 15000  # Placeholder
+                    # Calculate actual cost using real data
+                    # TPR cost = baseline_units × discount_depth × unit_price
+                    baseline_velocity = self.causal_parameters.get("baseline_velocity_avg", 0)
+                    unit_price = self._get_unit_price(ppg)
+                    tpr_cost = baseline_velocity * discount_depth * unit_price
 
+                    # Display cost from promo config
+                    display_cost = self._get_display_cost(display_tier)
+
+                    promo_cost = tpr_cost + display_cost
+
+                    # Check budget constraint
                     if total_spend + promo_cost > target_spend:
-                        break
+                        continue  # Skip this event, would exceed budget
 
+                    # Add event
                     calendar_events.append({
                         "week": week,
                         "ppg": ppg,
@@ -363,10 +488,12 @@ You MUST complete step 4 - calling save_promotion_calendar is mandatory."""
                         "discount_depth": discount_depth,
                         "display_tier": display_tier,
                         "feature_active": False,
-                        "reasoning": f"Selected week {week} (seasonality {season_factor:.2f}x) for {ppg} at {retailer}"
+                        "reasoning": f"Week {week} (seasonality {season_factor:.2f}x) for {ppg} at {retailer}"
                     })
 
                     total_spend += promo_cost
+                    last_week_scheduled[key] = week
+                    events_added += 1
 
         self.current_calendar = {
             "calendar_events": calendar_events,
@@ -380,7 +507,8 @@ You MUST complete step 4 - calling save_promotion_calendar is mandatory."""
             "event_count": len(calendar_events),
             "total_spend": total_spend,
             "budget_utilization": total_spend / budget_limit * 100,
-            "summary": f"Generated {len(calendar_events)} promotion events, ${total_spend:,.0f} spend ({total_spend/budget_limit*100:.1f}% of budget)"
+            "summary": f"Generated {len(calendar_events)} promotion events, ${total_spend:,.0f} spend ({total_spend/budget_limit*100:.1f}% of budget)",
+            "calendar_events": calendar_events  # Return actual events for saving
         }
 
     def _adjust_calendar_for_violations(self, violations: List[Dict], feedback: str) -> Dict[str, Any]:
@@ -402,38 +530,107 @@ You MUST complete step 4 - calling save_promotion_calendar is mandatory."""
                 "message": "No current calendar to adjust. Generate one first."
             }
 
-        calendar_events = self.current_calendar.get("calendar_events", [])
+        calendar_events = self.current_calendar.get("calendar_events", []).copy()
+        budget_limit = self.budget_limit
         adjustments_made = []
+        baseline_velocity = self.causal_parameters.get("baseline_velocity_avg", 0)
 
-        for violation in violations:
-            violation_type = violation.get("type", "").lower()
+        # Process violations in priority order: budget first, then gaps
+        has_budget_violation = any("budget" in v.get("type", "").lower() for v in violations)
+        has_gap_violation = any("gap" in v.get("type", "").lower() for v in violations)
 
-            if "budget" in violation_type:
-                # Remove lowest-ROI events until under budget
-                # Simplified: remove last 20% of events
-                remove_count = max(1, len(calendar_events) // 5)
-                calendar_events = calendar_events[:-remove_count]
-                adjustments_made.append(f"Removed {remove_count} events to reduce budget")
+        # Fix budget violations by removing highest-cost events
+        if has_budget_violation:
+            # Calculate cost per event
+            events_with_cost = []
+            for event in calendar_events:
+                ppg = event.get("ppg")
+                discount_depth = event.get("discount_depth", 0)
+                display_tier = event.get("display_tier", "none")
 
-            elif "gap" in violation_type:
-                # Simplified: remove conflicting events (Claude will provide better logic via natural language)
-                adjustments_made.append("Gap violations noted - regeneration recommended")
+                unit_price = self._get_unit_price(ppg)
+                tpr_cost = baseline_velocity * discount_depth * unit_price
+                display_cost = self._get_display_cost(display_tier)
+                total_cost = tpr_cost + display_cost
 
-            elif "frequency" in violation_type:
-                # Reduce events for over-frequency PPG-Retailers
-                adjustments_made.append("Frequency violations noted - regeneration recommended")
+                events_with_cost.append((event, total_cost))
+
+            # Sort by cost (highest first) and remove until under budget
+            events_with_cost.sort(key=lambda x: x[1], reverse=True)
+
+            # Calculate current total
+            current_total = sum(cost for _, cost in events_with_cost)
+
+            # Remove events until under budget
+            removed_count = 0
+            while current_total > budget_limit and events_with_cost:
+                removed_event, removed_cost = events_with_cost.pop(0)
+                current_total -= removed_cost
+                removed_count += 1
+
+            calendar_events = [event for event, _ in events_with_cost]
+            adjustments_made.append(f"Removed {removed_count} highest-cost events to meet budget (now ${current_total:,.0f})")
+
+        # Fix gap violations by spreading out events
+        if has_gap_violation:
+            # Group events by PPG-Retailer
+            from collections import defaultdict
+            ppg_retailer_events = defaultdict(list)
+
+            for event in calendar_events:
+                key = (event.get("ppg"), event.get("retailer"))
+                ppg_retailer_events[key].append(event)
+
+            # For each PPG-Retailer, ensure min 4-week gaps
+            fixed_events = []
+            gap_fixes = 0
+
+            for (ppg, retailer), events in ppg_retailer_events.items():
+                # Sort by week
+                events_sorted = sorted(events, key=lambda e: e.get("week", 0))
+
+                # Keep first event, check gaps for rest
+                if events_sorted:
+                    fixed_events.append(events_sorted[0])
+                    last_week = events_sorted[0].get("week", 0)
+
+                    for event in events_sorted[1:]:
+                        week = event.get("week", 0)
+                        if week - last_week >= 4:  # Min gap is 4 weeks
+                            fixed_events.append(event)
+                            last_week = week
+                        else:
+                            gap_fixes += 1
+                            # Skip this event (too close to previous)
+
+            calendar_events = fixed_events
+            if gap_fixes > 0:
+                adjustments_made.append(f"Removed {gap_fixes} events that violated 4-week minimum gap rule")
 
         # Update current calendar
         self.current_calendar["calendar_events"] = calendar_events
-        total_spend = len(calendar_events) * 15000  # Simplified cost calculation
+
+        # Recalculate total spend
+        total_spend = 0
+        for event in calendar_events:
+            ppg = event.get("ppg")
+            discount_depth = event.get("discount_depth", 0)
+            display_tier = event.get("display_tier", "none")
+
+            unit_price = self._get_unit_price(ppg)
+            tpr_cost = baseline_velocity * discount_depth * unit_price
+            display_cost = self._get_display_cost(display_tier)
+
+            total_spend += tpr_cost + display_cost
 
         return {
             "status": "adjusted",
             "violations_addressed": len(violations),
             "adjustments": adjustments_made,
             "new_event_count": len(calendar_events),
-            "new_total_spend": total_spend,
-            "recommendation": "Claude should regenerate calendar with constraint awareness rather than just removing events"
+            "new_total_spend": round(total_spend, 2),
+            "budget_utilization_pct": round(total_spend / budget_limit * 100, 1),
+            "message": "Calendar adjusted successfully. Use calculate_projected_impact and save_promotion_calendar to finalize."
         }
 
     def _calculate_projected_impact(self, calendar_events: List[Dict]) -> Dict[str, Any]:
@@ -446,12 +643,81 @@ You MUST complete step 4 - calling save_promotion_calendar is mandatory."""
         Returns:
             Dict with projected metrics
         """
-        # Placeholder calculation
+        if not self.causal_parameters:
+            return {
+                "projected_volume": 0,
+                "projected_profit": 0,
+                "projected_roi": 0,
+                "status": "error",
+                "error": "Causal parameters not loaded"
+            }
+
+        # Extract causal parameters
+        baseline_velocity = self.causal_parameters.get("baseline_velocity_avg", 0)
+        elasticity_model = self.causal_parameters.get("elasticity_model", {})
+        discount_lifts = elasticity_model.get("discount_lift_factors", {})
+        display_lift_multiplier = elasticity_model.get("display_lift_multiplier", 1.0)
+        seasonality_factors = self.causal_parameters.get("seasonality_factors", {})
+
+        total_incremental_volume = 0
+        total_baseline_volume = 0
+        total_cost = 0
+
+        for event in calendar_events:
+            week = event.get("week")
+            discount_depth = event.get("discount_depth", 0)
+            display_active = event.get("display_active", False)
+
+            # Get seasonality factor
+            seasonality = seasonality_factors.get(str(week), 1.0)
+
+            # Get discount lift based on depth bucket
+            discount_pct = discount_depth * 100
+            if discount_pct < 15:
+                lift = discount_lifts.get("0-15", 1.5)
+            elif discount_pct < 25:
+                lift = discount_lifts.get("15-25", 2.0)
+            elif discount_pct < 35:
+                lift = discount_lifts.get("25-35", 2.5)
+            elif discount_pct < 45:
+                lift = discount_lifts.get("35-45", 3.5)
+            else:
+                lift = discount_lifts.get("45+", 4.0)
+
+            # Calculate baseline for this week
+            week_baseline = baseline_velocity * seasonality
+
+            # Apply lifts
+            promo_volume = week_baseline * lift
+            if display_active:
+                promo_volume *= display_lift_multiplier
+
+            # Incremental volume
+            incremental_volume = promo_volume - week_baseline
+            total_incremental_volume += incremental_volume
+            total_baseline_volume += week_baseline
+
+            # Calculate cost on-the-fly (events don't have cost fields)
+            ppg = event.get("ppg")
+            display_tier = event.get("display_tier", "none")
+
+            unit_price = self._get_unit_price(ppg)
+            tpr_cost = baseline_velocity * discount_depth * unit_price
+            display_cost = self._get_display_cost(display_tier)
+
+            total_cost += tpr_cost + display_cost
+
+        # Calculate projected metrics
+        projected_volume = total_baseline_volume + total_incremental_volume
+        projected_roi = (total_incremental_volume / total_cost * 100) if total_cost > 0 else 0
+
         return {
-            "projected_volume": 0,
-            "projected_profit": 0,
-            "projected_roi": 0,
-            "status": "placeholder"
+            "projected_volume": round(projected_volume, 2),
+            "incremental_volume": round(total_incremental_volume, 2),
+            "baseline_volume": round(total_baseline_volume, 2),
+            "total_cost": round(total_cost, 2),
+            "projected_roi": round(projected_roi, 2),
+            "status": "calculated"
         }
 
     def _save_promotion_calendar(self, calendar_events: List[Dict], metadata: Dict) -> Dict[str, Any]:
@@ -465,7 +731,8 @@ You MUST complete step 4 - calling save_promotion_calendar is mandatory."""
         Returns:
             Dict with save status
         """
-        output_file = "outputs/promotion_calendar.json"
+        from pathlib import Path
+        output_file = str(Path(self.output_dir) / "promotion_calendar.json")
 
         calendar_data = {
             "objective": self.objective,
@@ -505,21 +772,15 @@ You MUST complete step 4 - calling save_promotion_calendar is mandatory."""
         return [
             {
                 "name": "load_causal_parameters",
-                "description": "Load causal parameters (elasticity, lift factors, seasonality) from Agent A's output file",
+                "description": "Load causal parameters (elasticity, lift factors, seasonality) from Agent A's output file. No parameters needed - automatically uses correct output directory.",
                 "input_schema": {
                     "type": "object",
-                    "properties": {
-                        "file_path": {
-                            "type": "string",
-                            "default": "outputs/causal_parameters.json",
-                            "description": "Path to Agent A's causal parameters JSON file"
-                        }
-                    }
+                    "properties": {}
                 }
             },
             {
                 "name": "generate_initial_calendar",
-                "description": "Generate initial promotional calendar using greedy optimization heuristic",
+                "description": "Generate initial promotional calendar using greedy optimization heuristic. Returns calendar_events array that you MUST pass directly to save_promotion_calendar in the next step.",
                 "input_schema": {
                     "type": "object",
                     "properties": {
@@ -575,13 +836,13 @@ You MUST complete step 4 - calling save_promotion_calendar is mandatory."""
             },
             {
                 "name": "save_promotion_calendar",
-                "description": "REQUIRED FINAL STEP: Save promotion calendar to JSON file. You MUST call this tool after generating the calendar to complete the task. Do not finish without calling this.",
+                "description": "REQUIRED FINAL STEP: Save promotion calendar to JSON file. You MUST call this tool after generating the calendar to complete the task. IMPORTANT: Pass the exact calendar_events array returned by generate_initial_calendar - do NOT create new events.",
                 "input_schema": {
                     "type": "object",
                     "properties": {
                         "calendar_events": {
                             "type": "array",
-                            "description": "List of promotion events from the calendar you generated"
+                            "description": "EXACT calendar_events array from generate_initial_calendar tool result. Do NOT modify the schema."
                         },
                         "metadata": {
                             "type": "object",
@@ -631,16 +892,20 @@ Step 2: generate_initial_calendar
    - Select optimal PPG-Retailer-Week combinations
    - Choose tactics based on objective
    - Respect all retailer constraints
+   - SAVE the calendar_events array from the response - you'll need it for steps 3 and 4
 
 Step 3: calculate_projected_impact
    Calculate estimated volume/profit for the calendar
+   - Pass the EXACT calendar_events array from step 2
 
 Step 4: save_promotion_calendar (MANDATORY - DO NOT SKIP)
    Save the calendar to file
-   - Pass the calendar_events from step 2
+   - Pass the EXACT calendar_events array from step 2 (do NOT modify or recreate)
    - Pass metadata with total_spend and projections
    - YOU MUST CALL THIS BEFORE FINISHING
 
+CRITICAL: Use the exact calendar_events returned by generate_initial_calendar tool.
+DO NOT create new events with different field names.
 DO NOT regenerate the calendar multiple times.
 DO NOT skip step 4.
 
@@ -669,6 +934,14 @@ Execute systematically. Use your tools. Generate an excellent calendar."""
             formatted.append(f"{i}. {v.get('type', 'Unknown')}: {v.get('details', 'No details')}")
 
         return "\n".join(formatted)
+
+    def _extract_reasoning(self, content: List[Any]) -> str:
+        """Extract Claude's reasoning text from response content blocks."""
+        reasoning_parts = []
+        for block in content:
+            if hasattr(block, 'text') and block.text:
+                reasoning_parts.append(block.text)
+        return " ".join(reasoning_parts).strip() if reasoning_parts else ""
 
     def _log_interaction(self, user_message: Dict, response: Any):
         """Log conversation interaction."""

@@ -64,6 +64,16 @@ class TPOOrchestrator:
         # Execution log
         self.execution_log = []
 
+    def _log_agent_reasoning(self, reasoning_text: str):
+        """
+        Callback for agents to log their reasoning to the journey tracker.
+
+        Args:
+            reasoning_text: Reasoning from agent (prefixed with "Agent X: ...")
+        """
+        if self.journey:
+            self.journey.log_agent_reasoning(reasoning_text)
+
     def run(self, objective: str = "volume", budget: float = 1_000_000) -> Dict[str, Any]:
         """
         Execute the full TPO workflow.
@@ -205,12 +215,13 @@ class TPOOrchestrator:
                 status="INFO"
             )
         else:
-            # Initialize Agent A with API key
-            api_key = os.environ.get("ANTHROPIC_API_KEY")
-            if not api_key:
-                raise ValueError("ANTHROPIC_API_KEY environment variable not set")
-
-            self.analyst = AnalystAgent(api_key=api_key)
+            # Initialize Agent A (it gets API key from environment internally)
+            self.analyst = AnalystAgent(
+                data_dir=self.data_dir,
+                output_dir=str(self.output_dir),
+                journey_tracker=self.journey,
+                reasoning_callback=self._log_agent_reasoning
+            )
 
             # Agent A will load data and analyze via its tools
             causal_parameters = self.analyst.analyze()
@@ -260,7 +271,10 @@ class TPOOrchestrator:
             api_key=api_key,
             objective=objective,
             budget_limit=budget,
-            max_iterations=self.max_iterations
+            max_iterations=self.max_iterations,
+            output_dir=str(self.output_dir),
+            data_dir=self.data_dir,
+            reasoning_callback=self._log_agent_reasoning
         )
 
         self._log_event("strategist_initialized", {"objective": objective})
@@ -270,7 +284,8 @@ class TPOOrchestrator:
         # AuditorAgent gets API key from environment and uses data_dir
         self.auditor = AuditorAgent(
             data_dir=self.data_dir,
-            output_dir=str(self.output_dir)
+            output_dir=str(self.output_dir),
+            reasoning_callback=self._log_agent_reasoning
         )
 
         self._log_event("auditor_initialized", {})
@@ -414,10 +429,15 @@ class TPOOrchestrator:
                 # Format violation details based on type or category
                 vtype = violation.get('type', violation.get('category', 'UNKNOWN'))
 
-                if 'gap' in vtype.lower() or vtype == 'GAP_VIOLATION':
+                # Use 'details' field first, fallback to type-specific formatting
+                if 'details' in violation:
+                    detail_str = violation['details']
+                elif 'gap' in vtype.lower() or vtype == 'GAP_VIOLATION':
                     detail_str = f"PPG {violation.get('ppg', 'N/A')} at Retailer {violation.get('retailer', 'N/A')}: weeks {violation.get('week1', 'N/A')}-{violation.get('week2', 'N/A')} (gap: {violation.get('gap', 'N/A')}, required: {violation.get('min_required', 'N/A')})"
                 elif 'budget' in vtype.lower() or vtype == 'BUDGET_VIOLATION':
-                    detail_str = f"Total spend ${violation.get('total_spend', 'N/A'):,.0f} exceeds budget ${violation.get('budget_limit', 'N/A'):,.0f}"
+                    # Use 'overage' field if available
+                    overage = violation.get('overage', 'N/A')
+                    detail_str = f"Budget exceeded by ${overage:,.0f}" if isinstance(overage, (int, float)) else "Budget exceeded"
                 elif 'frequency' in vtype.lower() or vtype == 'FREQUENCY_VIOLATION':
                     detail_str = f"PPG {violation.get('ppg', 'N/A')}: {violation.get('count', 0)} promotions exceeds limit {violation.get('max_allowed', 0)}"
                 elif 'blackout' in vtype.lower() or vtype == 'BLACKOUT_VIOLATION':
@@ -612,6 +632,6 @@ class TPOOrchestrator:
 
         logger.info(f"Saved: {report_gen.report_path}")
 
-        # Also print quick summary to console
+        # Print quick summary to console
         quick_summary = generate_quick_summary(output_dir=str(self.output_dir))
         print("\n" + quick_summary)
