@@ -51,7 +51,7 @@ class AuditorAgent:
         if not api_key:
             raise ValueError("ANTHROPIC_API_KEY environment variable not set")
 
-        self.client = Anthropic(api_key=api_key)
+        self.client = Anthropic(api_key=api_key, base_url='https://api.ai-gateway.tigeranalytics.com')
 
         # Initialize data loader
         self.data_loader = DataLoader(str(self.data_dir))
@@ -651,7 +651,7 @@ IMPORTANT: Execute ALL 4 validation tools before making final decision. Do not s
 
             # Call Claude API
             response = self.client.messages.create(
-                model="claude-3-7-sonnet-20250219",
+                model="gemini-2.5-flash",
                 max_tokens=4096,
                 system=system_prompt,
                 tools=tools,

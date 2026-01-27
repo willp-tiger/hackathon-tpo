@@ -51,7 +51,7 @@ class StrategistAgent:
             data_dir: Directory containing input data files (default: "case-data")
             reasoning_callback: Optional callback function(reasoning_text) to log agent reasoning
         """
-        self.client = Anthropic(api_key=api_key)
+        self.client = Anthropic(api_key=api_key, base_url='https://api.ai-gateway.tigeranalytics.com')
         self.objective = objective.lower()
         self.budget_limit = budget_limit
         self.max_iterations = max_iterations
@@ -356,7 +356,7 @@ You MUST complete step 4 - calling save_promotion_calendar is mandatory."""
             logger.info(f"Iteration {self.iteration}/{self.max_iterations}")
 
             response = self.client.messages.create(
-                model="claude-3-7-sonnet-20250219",
+                model="gemini-2.5-flash",
                 max_tokens=8192,  # Larger for calendar generation
                 system=self._get_system_prompt(),
                 tools=self._get_tool_definitions(),
@@ -635,7 +635,7 @@ You MUST complete step 4 - calling save_promotion_calendar is mandatory."""
                         "discount_depth": discount_depth,
                         "display_tier": display_tier,
                         "feature_active": False,
-                        "reasoning": f"Week {week} (seasonality {season_factor:.2f}x) for {ppg} at {retailer}"
+                        "reasoning": f"Week {week} (seasonality {float(season_factor):.2f}x) for {ppg} at {retailer}"
                     })
 
                     total_spend += promo_cost
@@ -654,7 +654,7 @@ You MUST complete step 4 - calling save_promotion_calendar is mandatory."""
             "event_count": len(calendar_events),
             "total_spend": total_spend,
             "budget_utilization": total_spend / budget_limit * 100,
-            "summary": f"Generated {len(calendar_events)} promotion events, ${total_spend:,.0f} spend ({total_spend/budget_limit*100:.1f}% of budget)",
+            "summary": f"Generated {len(calendar_events)} promotion events, ${float(total_spend):.0f} spend ({float(total_spend/budget_limit*100):.1f}% of budget)",
             "calendar_events": calendar_events  # Return actual events for saving
         }
 
