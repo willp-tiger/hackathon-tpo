@@ -180,6 +180,7 @@ class TPOOrchestrator:
 
         # Check if causal parameters already exist
         causal_params_path = self.output_dir / "causal_parameters.json"
+        logger.info(f"{causal_params_path}")
         if causal_params_path.exists():
             logger.info("Causal parameters already exist, loading from file...")
             self.journey.log_event(

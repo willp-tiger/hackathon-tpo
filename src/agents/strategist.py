@@ -287,7 +287,7 @@ class StrategistAgent:
             else:
                 best_tier = "none"  # No budget for any display
 
-        logger.debug(f"Selected {best_tier} display for {ppg} (objective={objective}, score={best_roi:.2f if selected else 0})")
+        logger.debug(f"Selected {best_tier} display for {ppg} (objective={objective}, score={best_roi if selected else 0:.2f})")
         return best_tier
 
     def generate_calendar(self, feedback: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -635,7 +635,7 @@ You MUST complete step 4 - calling save_promotion_calendar is mandatory."""
                         "discount_depth": discount_depth,
                         "display_tier": display_tier,
                         "feature_active": False,
-                        "reasoning": f"Week {week} (seasonality {float(season_factor):.2f}x) for {ppg} at {retailer}"
+                        "reasoning": f"Week {week} (seasonality {season_factor} x) for {ppg} at {retailer}"
                     })
 
                     total_spend += promo_cost
@@ -654,7 +654,7 @@ You MUST complete step 4 - calling save_promotion_calendar is mandatory."""
             "event_count": len(calendar_events),
             "total_spend": total_spend,
             "budget_utilization": total_spend / budget_limit * 100,
-            "summary": f"Generated {len(calendar_events)} promotion events, ${float(total_spend):.0f} spend ({float(total_spend/budget_limit*100):.1f}% of budget)",
+            "summary": f"Generated {len(calendar_events)} promotion events, ${total_spend:.0f} spend ({total_spend/budget_limit*100:.1f}% of budget)",
             "calendar_events": calendar_events  # Return actual events for saving
         }
 

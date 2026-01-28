@@ -29,7 +29,7 @@ CORS(app)
 
 # Store active runs
 active_runs: Dict[str, Dict[str, Any]] = {}
-RUNS_DIR = Path("outputs/runs")
+RUNS_DIR = Path("outputs/")
 RUNS_DIR.mkdir(parents=True, exist_ok=True)
 
 
@@ -169,7 +169,7 @@ def get_results(run_id):
             "causal_params": {...}
         }
     """
-    run_dir = RUNS_DIR / run_id
+    run_dir = RUNS_DIR
 
     if not run_dir.exists():
         return jsonify({'error': 'Run not found'}), 404
