@@ -34,7 +34,7 @@ class StrategistAgent:
         api_key: str,
         objective: str,
         budget_limit: float,
-        max_iterations: int = 10,
+        max_iterations: int = 20,
         output_dir: str = "outputs",
         data_dir: str = "case-data",
         reasoning_callback=None
@@ -360,6 +360,7 @@ You MUST complete step 4 - calling save_promotion_calendar is mandatory."""
                 max_tokens=8192,  # Larger for calendar generation
                 system=self._get_system_prompt(),
                 tools=self._get_tool_definitions(),
+                tool_choice={"type": "any"},
                 messages=messages
             )
 
@@ -816,6 +817,8 @@ You MUST complete step 4 - calling save_promotion_calendar is mandatory."""
         total_incremental_profit = 0
 
         for event in calendar_events:
+            if event != "" and isinstance(event, str):
+                event = json.loads(event)
             week = event.get("week")
             discount_depth = event.get("discount_depth", 0)
             display_active = event.get("display_active", False)
@@ -1060,13 +1063,13 @@ Step 3: calculate_projected_impact
    Calculate estimated volume/profit for the calendar
    - Pass the EXACT calendar_events array from step 2
 
-Step 4: save_promotion_calendar (MANDATORY - DO NOT SKIP)
+Step 4: save_promotion_calendar (MANDATORY REQUIREMENT - DO NOT SKIP)
    Save the calendar to file
    - Pass the EXACT calendar_events array from step 2 (do NOT modify or recreate)
    - Pass metadata with total_spend and projections
    - YOU MUST CALL THIS BEFORE FINISHING
 
-CRITICAL: Use the exact calendar_events returned by generate_initial_calendar tool.
+CRITICAL REQUIREMENT: Use the exact calendar_events returned by generate_initial_calendar tool.
 DO NOT create new events with different field names.
 DO NOT regenerate the calendar multiple times.
 DO NOT skip step 4.
@@ -1129,6 +1132,8 @@ Execute systematically. Use your tools. Generate an excellent calendar."""
                 f.write("\n" + "=" * 80 + "\n\n")
 
                 for entry in self.execution_log:
+                    if entry != "" and isinstance(entry, str):
+                        entry = json.loads(entry)
                     f.write(f"Iteration {entry['iteration']}:\n")
                     f.write(f"  User: {entry['user_message'][:200]}...\n")
                     f.write(f"  Response Type: {entry['response_type']}\n")

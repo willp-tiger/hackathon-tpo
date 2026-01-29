@@ -219,6 +219,8 @@ class AuditorAgent:
         baseline_velocity = self.causal_parameters["baseline_velocity_avg"]
 
         for event in events:
+            if event != "" and isinstance(event, str):
+                event = json.loads(event)
             ppg = event["ppg"]
             discount_depth = event["discount_depth"]
             display_tier = event.get("display_tier", "none")
@@ -303,6 +305,8 @@ class AuditorAgent:
         # Group events by (PPG, Retailer)
         ppg_retailer_events = defaultdict(list)
         for event in events:
+            if event != "" and isinstance(event, str):
+                event = json.loads(event)
             key = (event["ppg"], event["retailer"])
             ppg_retailer_events[key].append(event["week"])
 
@@ -354,6 +358,8 @@ class AuditorAgent:
         # Count promos per PPG (across all retailers)
         promo_counts = defaultdict(int)
         for event in events:
+            if event !="" and isinstance(event, str):
+                event = json.loads(event)
             promo_counts[event["ppg"]] += 1
 
         # Check for violations
@@ -390,6 +396,8 @@ class AuditorAgent:
 
         violations = []
         for event in events:
+            if event != "" and isinstance(event, str):
+                event = json.loads(event)
             if event["week"] in blackout_weeks:
                 violations.append({
                     "week": event["week"],
@@ -427,11 +435,12 @@ class AuditorAgent:
         calendar_summary = {}
         if self.calendar_data and "calendar_events" in self.calendar_data:
             events = self.calendar_data["calendar_events"]
+            
             calendar_summary = {
                 "total_events": len(events),
-                "unique_ppgs": len(set(e["ppg"] for e in events)),
-                "unique_retailers": len(set(e["retailer"] for e in events)),
-                "weeks_covered": sorted(set(e["week"] for e in events))
+                "unique_ppgs": len(set(json.loads(e)["ppg"] for e in events)),
+                "unique_retailers": len(set(json.loads(e)["retailer"] for e in events)),
+                "weeks_covered": sorted(set(json.loads(e)["week"] for e in events))
             }
 
         # Add budget info if available
