@@ -314,6 +314,8 @@ class TPOOrchestrator:
             )
 
             calendar = self.strategist.generate_calendar(feedback)
+            if isinstance(calendar, str):
+                calendar = json.loads(calendar)
 
             self._log_event("strategist_generation_complete", {
                 "iteration": iteration,

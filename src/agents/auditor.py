@@ -438,9 +438,9 @@ class AuditorAgent:
             
             calendar_summary = {
                 "total_events": len(events),
-                "unique_ppgs": len(set(json.loads(e)["ppg"] for e in events)),
-                "unique_retailers": len(set(json.loads(e)["retailer"] for e in events)),
-                "weeks_covered": sorted(set(json.loads(e)["week"] for e in events))
+                "unique_ppgs": len(set(e["ppg"] for e in events)),
+                "unique_retailers": len(set(e["retailer"] for e in events)),
+                "weeks_covered": sorted(set(e["week"] for e in events))
             }
 
         # Add budget info if available

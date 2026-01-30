@@ -817,8 +817,29 @@ You MUST complete step 4 - calling save_promotion_calendar is mandatory."""
         total_incremental_profit = 0
 
         for event in calendar_events:
-            if event != "" and isinstance(event, str):
+            if event != "" and isinstance(event, str) and '{' in event:
                 event = json.loads(event)
+            elif event != "" and isinstance(event, str):
+                event_dict = {}
+                event_parts = event.split(',')
+                for part in event_parts:
+                    if '=' in part:
+                        key, val = part.split('=',1)
+                        key = key.strip()
+                        val = val.strip()
+                        # Convert numeric values
+                        if key in ['week', 'discount_depth']:
+                            try:
+                                val = float(val) if '.' in val else int(val)
+                            except ValueError:
+                                pass
+                
+                        # Convert boolean values
+                        elif key in ['feature_active']:
+                            val = val.lower() == 'true'
+                
+                    event_dict[key] = val
+                event = event_dict
             week = event.get("week")
             discount_depth = event.get("discount_depth", 0)
             display_active = event.get("display_active", False)
@@ -898,6 +919,34 @@ You MUST complete step 4 - calling save_promotion_calendar is mandatory."""
         """
         from pathlib import Path
         output_file = str(Path(self.output_dir) / "promotion_calendar.json")
+        calendar_event_dict = []
+        for event in calendar_events:
+            try:
+                if event != "" and isinstance(event, str) and '{' in event:
+                    event = json.loads(event)
+                elif event != "" and isinstance(event, str):
+                    event_dict = {}
+                    event_parts = event.split(',')
+                    for part in event_parts:
+                        if '=' in part:
+                            key, val = part.split('=',1)
+                            key = key.strip()
+                            val = val.strip()
+                            # Convert numeric values
+                            if key in ['week', 'discount_depth']:
+                                try:
+                                    val = float(val) if '.' in val else int(val)
+                                except ValueError:
+                                    pass                   
+                            # Convert boolean values
+                            elif key in ['feature_active']:
+                                val = val.lower() == 'true'                   
+                        event_dict[key] = val
+                    event = event_dict
+            except json.JSONDecodeError as e:
+                logger.error(e)                
+            calendar_event_dict.append(event)
+        calendar_events = calendar_event_dict
 
         calendar_data = {
             "objective": self.objective,
@@ -912,7 +961,10 @@ You MUST complete step 4 - calling save_promotion_calendar is mandatory."""
 
         try:
             with open(output_file, 'w', encoding='utf-8') as f:
-                json.dump(calendar_data, f, indent=2)
+                try:
+                    json.dump(calendar_data, f, indent=2)
+                except json.JSONDecodeError as e:
+                    logger.error(e.__traceback__)
 
             logger.success(f"Saved calendar to {output_file}")
 
@@ -1062,6 +1114,8 @@ Step 2: generate_initial_calendar
 Step 3: calculate_projected_impact
    Calculate estimated volume/profit for the calendar
    - Pass the EXACT calendar_events array from step 2
+   - calendar_events data structure should be the same as what is in step 2
+
 
 Step 4: save_promotion_calendar (MANDATORY REQUIREMENT - DO NOT SKIP)
    Save the calendar to file
