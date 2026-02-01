@@ -184,7 +184,7 @@ class AuditorAgent:
                             "description": "Summary of all validation checks"
                         }
                     },
-                    "required": ["status", "violations", "feedback"]
+                    "required": ["status", "violations", "feedback", "warnings"]
                 }
             }
         ]
@@ -448,6 +448,11 @@ class AuditorAgent:
             calendar_summary["budget_limit"] = self.calendar_data["budget_limit"]
         if "total_projected_spend" in self.calendar_data:
             calendar_summary["total_spend"] = self.calendar_data["total_projected_spend"]
+        
+        # Format Validation Details
+        for key, val in validation_details.items():
+            if "content" in val:
+                val["content"] = json.loads(val["content"])
 
         # Build audit report
         audit_report = {
@@ -660,7 +665,7 @@ IMPORTANT: Execute ALL 4 validation tools before making final decision. Do not s
 
             # Call Claude API
             response = self.client.messages.create(
-                model="gemini-2.5-flash",
+                model="gemini-2.0-flash",
                 max_tokens=4096,
                 system=system_prompt,
                 tools=tools,

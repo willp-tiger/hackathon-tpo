@@ -67,7 +67,7 @@ def run_optimization():
 
         # Generate run ID
         run_id = str(uuid.uuid4())[:8]  # Short ID for readability
-        run_dir = RUNS_DIR / run_id
+        run_dir = RUNS_DIR
         run_dir.mkdir(parents=True, exist_ok=True)
 
         # Store run metadata
@@ -120,7 +120,7 @@ def get_status(run_id):
     """
     if run_id not in active_runs:
         # Try to load from disk
-        metadata_file = RUNS_DIR / run_id / 'metadata.json'
+        metadata_file = RUNS_DIR / 'metadata.json'
         if metadata_file.exists():
             with open(metadata_file) as f:
                 return jsonify(json.load(f))
@@ -140,7 +140,7 @@ def get_journey(run_id):
             "last_update": "..."
         }
     """
-    journey_file = RUNS_DIR / run_id / 'OPTIMIZATION_JOURNEY.txt'
+    journey_file = RUNS_DIR / 'OPTIMIZATION_JOURNEY.txt'
 
     if not journey_file.exists():
         return jsonify({

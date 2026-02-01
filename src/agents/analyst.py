@@ -1383,7 +1383,7 @@ When ready, call save_causal_parameters with complete JSON:
 
             try:
                 response = self.client.messages.create(
-                    model="gemini-2.5-flash",
+                    model="gemini-2.0-flash",
                     max_tokens=4096,
                     system=system_prompt,
                     tools=self._define_tools(),

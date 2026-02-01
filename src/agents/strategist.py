@@ -100,7 +100,7 @@ class StrategistAgent:
             raise ValueError("Sales data not loaded - cannot calculate TPR costs")
 
         # Filter sales data for this PPG
-        ppg_sales = self.sales_data[self.sales_data["PPG"] == ppg]
+        ppg_sales = self.sales_data[self.sales_data["PPG"] == ppg.replace("'","")]
 
         if ppg_sales.empty:
             logger.warning(f"PPG '{ppg}' not found in sales data - using default price $2.50")
@@ -327,7 +327,9 @@ Auditor's Guidance: {feedback.get('feedback', 'Fix the violations above')}
 Your task:
 1. Load the current calendar (already saved to {self.output_dir}/promotion_calendar.json)
 2. Call adjust_calendar_for_violations to fix the specific violations
-3. Calculate projected impact for the adjusted calendar
+3. Calculate projected impact for the adjusted calendar. 
+IMPORTANT: Pass the EXACT calendar_events returned by adjust_calendar_for_violations - 
+DO NOT create new events.  DO NOT alter schema.
 4. Save the corrected calendar
 
 Be strategic in your corrections. Make MATERIAL changes to address violations, not cosmetic ones."""
@@ -342,7 +344,9 @@ Target Utilization: 80-95% of budget
 Follow ALL steps in order (DO NOT skip step 4):
 1. Load causal parameters from Agent A
 2. Generate initial calendar using greedy heuristic
-3. Calculate projected impact
+3. Calculate projected impact. 
+IMPORTANT: Pass the EXACT calendar_events returned by generate_initial_calendar - 
+DO NOT create new events. DO NOT alter schema. 
 4. REQUIRED: Call save_promotion_calendar to save the calendar to file
 
 Be strategic and data-driven. Every promotion must have clear reasoning.
@@ -356,7 +360,7 @@ You MUST complete step 4 - calling save_promotion_calendar is mandatory."""
             logger.info(f"Iteration {self.iteration}/{self.max_iterations}")
 
             response = self.client.messages.create(
-                model="gemini-2.5-flash",
+                model="gemini-2.0-flash",
                 max_tokens=8192,  # Larger for calendar generation
                 system=self._get_system_prompt(),
                 tools=self._get_tool_definitions(),
@@ -631,10 +635,10 @@ You MUST complete step 4 - calling save_promotion_calendar is mandatory."""
                     # Add event
                     calendar_events.append({
                         "week": week,
-                        "ppg": ppg,
-                        "retailer": retailer,
+                        "ppg": ppg.replace("'", ""),
+                        "retailer": retailer.replace("'", ""),
                         "discount_depth": discount_depth,
-                        "display_tier": display_tier,
+                        "display_tier": display_tier.replace("'", ""),
                         "feature_active": False,
                         "reasoning": f"Week {week} (seasonality {season_factor} x) for {ppg} at {retailer}"
                     })
@@ -642,6 +646,7 @@ You MUST complete step 4 - calling save_promotion_calendar is mandatory."""
                     total_spend += promo_cost
                     last_week_scheduled[key] = week
                     events_added += 1
+                    logger.info(f"Week:{week},PPG:{ppg},Retailer:{retailer},Discount:{discount_depth},Display:{display_tier},Spend:{total_spend}")
 
         self.current_calendar = {
             "calendar_events": calendar_events,
@@ -698,7 +703,7 @@ You MUST complete step 4 - calling save_promotion_calendar is mandatory."""
 
                 unit_price = self._get_unit_price(ppg)
                 tpr_cost = baseline_velocity * discount_depth * unit_price
-                display_cost = self._get_display_cost(display_tier)
+                display_cost = self._get_display_cost(display_tier.replace("'", ""))
                 total_cost = tpr_cost + display_cost
 
                 events_with_cost.append((event, total_cost))
@@ -1045,7 +1050,42 @@ You MUST complete step 4 - calling save_promotion_calendar is mandatory."""
                     "properties": {
                         "calendar_events": {
                             "type": "array",
-                            "description": "List of promotion events"
+                            "description": "List of promotion event objects",
+                            "calendar_events": {
+                                "type": "object",
+                                "properties": {
+                                    "week": {
+                                        "type": "integer",
+                                        "description": "Week number 1-52"
+                                    },
+                                    "ppg": {
+                                        "type": "string",
+                                        "description": "PPG"
+                                    },
+                                    "retailer": {
+                                        "type": "string",
+                                        "description": "Retailer"
+                                    },
+                                    "discount_depth": {
+                                        "type": "number",
+                                        "description": "Discount depth float/ decimal"
+                                    },
+                                    "display_tier": {
+                                        "type": "string",
+                                        "enum": ["platinum", "silver","gold", "bronze"],
+                                        "description": "Display tier",
+                                    },
+                                    "feature_active": {
+                                        "type": "boolean",
+                                        "description": "Feature Active (true/false)"
+                                    },
+                                    "reasoning":{
+                                        "type": "string",
+                                        "description": "Promotion reason"
+                                    }
+                                },
+                                "required": ["week", "ppg", "retailer", "discount_depth", "display_tier", "feature_active", "reasoning"]
+                            }
                         }
                     },
                     "required": ["calendar_events"]
@@ -1063,7 +1103,18 @@ You MUST complete step 4 - calling save_promotion_calendar is mandatory."""
                         },
                         "metadata": {
                             "type": "object",
-                            "description": "Additional metadata (total_spend, projected_impact, etc.)"
+                            "description": "Additional metadata (total_spend, projected_impact, etc.)",
+                            "metadata": {
+                                "total_spend": {
+                                    "type": "number",
+                                    "description": "Total event cost. IMPORTANT: return total_cost returned in result of calculate_projected_impact"
+                                },
+                                "projected_impact": {
+                                    "type": "number",
+                                    "description": "projected_roi returned by calculate_projected_impact"  
+                                }
+                            },
+                            "required": ['total_spend', 'projected_impact']
                         }
                     },
                     "required": ["calendar_events", "metadata"]
@@ -1119,8 +1170,8 @@ Step 3: calculate_projected_impact
 
 Step 4: save_promotion_calendar (MANDATORY REQUIREMENT - DO NOT SKIP)
    Save the calendar to file
-   - Pass the EXACT calendar_events array from step 2 (do NOT modify or recreate)
-   - Pass metadata with total_spend and projections
+   - REQUIRED: Pass the EXACT calendar_events array from step 2 (do NOT modify or recreate)
+   - REQUIRED: Pass metadata with total_spend and projections result returned by calculate_projected_impact 
    - YOU MUST CALL THIS BEFORE FINISHING
 
 CRITICAL REQUIREMENT: Use the exact calendar_events returned by generate_initial_calendar tool.
